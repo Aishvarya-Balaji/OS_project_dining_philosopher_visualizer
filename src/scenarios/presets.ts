@@ -56,9 +56,53 @@ export const FORCE_DEADLOCK_PRESET: ScenarioPreset = Object.freeze<ScenarioPrese
   config: forceDeadlockConfig,
 });
 
+const starvationBiasedConfig = Object.freeze<SimulationConfig>({
+  philosopherCount: 5,
+  seed: 42,
+  strategy: 'monitor',
+  initialStates: ['Hungry', 'Thinking', 'Thinking', 'Thinking', 'Thinking'],
+  initialThinkTicks: [1, 1, 3, 17, 30],
+  thinkTicksRange: [1, 8],
+  eatTicksRange: [2, 4],
+  perPhilosopherThinkRanges: [
+    [1, 1],
+    [3, 3],
+    [1, 1],
+    [12, 12],
+    [12, 12],
+  ],
+  perPhilosopherEatRanges: [
+    [4, 4],
+    [2, 2],
+    [4, 4],
+    [4, 4],
+    [2, 2],
+  ],
+  starvationThresholdTicks: 12,
+  livelockWindowTicks: 12,
+  casBackoffMode: 'random',
+  casFixedBackoffTicks: 2,
+  casMaxRandomBackoffTicks: 5,
+});
+
+/**
+ * Starvation (Biased) Preset:
+ * Asymmetric timing profile where fast-cycling neighbors P0 and P2 (1-tick think, 3-tick eat)
+ * overlap their meals across P1, causing P1 to wait past the threshold under the Monitor strategy
+ * before P3 eventually disrupts the cycle so P1 can eat.
+ */
+export const STARVATION_PRESET: ScenarioPreset = Object.freeze<ScenarioPreset>({
+  id: 'starvation',
+  name: 'Starvation (Biased)',
+  description:
+    'Asymmetric think/eat timings where fast-cycling neighbors P0 and P2 repeatedly overlap meals and starve P1 past the wait threshold.',
+  config: starvationBiasedConfig,
+});
+
 export const SCENARIO_PRESETS: readonly ScenarioPreset[] = Object.freeze([
   NORMAL_PRESET,
   FORCE_DEADLOCK_PRESET,
+  STARVATION_PRESET,
 ]);
 
 export function getScenarioPreset(id: string): ScenarioPreset {

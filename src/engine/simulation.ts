@@ -1,5 +1,6 @@
 import { detectDeadlock } from './deadlockDetector';
 import { SeededRng } from './rng';
+import { detectStarvation } from './starvationDetector';
 import { MonitorStrategy } from './strategies/monitor';
 import { NaiveStrategy } from './strategies/naive';
 import { SemaphoreStrategy } from './strategies/semaphore';
@@ -318,6 +319,11 @@ export class SimulationEngine {
   private deadlocked = false;
   private deadlockReason: string | null = null;
   private hasEmittedDeadlockEvent = false;
+  private starvationDetected = false;
+  private starvedPhilosopherIds: number[] = [];
+  private starvationReason: string | null = null;
+  private starvationEpisodeActive = new Set<number>();
+  private neighborMealsAtWaitStart: number[] = [];
 
   constructor(config: SimulationConfig = {}, strategy?: Strategy) {
     this.config = resolveSimulationConfig(config);
@@ -455,6 +461,7 @@ export class SimulationEngine {
         phil.remainingStateTicks = 0;
         phil.waitStartTick = this.tick;
         phil.currentWaitTicks = 0;
+        this.neighborMealsAtWaitStart[phil.id] = this.getNeighborMealsCompleted(phil.id);
         this.transitionPhilosopherState(
           phil,
           'Hungry',
@@ -468,7 +475,7 @@ export class SimulationEngine {
 
     // Phase 6: Deadlock detection
     const deadlockCheck = detectDeadlock({
-      philosophers: this.philosophers,
+      philosophers: this.philosophers.map((p) => this.toPhilosopherSnapshot(p)),
       forks: this.forks,
       strategy: this.strategy.name,
     });
@@ -492,6 +499,43 @@ export class SimulationEngine {
       });
     }
 
+    // Phase 7: Threshold-based Starvation detection
+    const neighborMealsDuringWait: Record<number, number> = {};
+    for (const phil of this.philosophers) {
+      const currentNeighborMeals = this.getNeighborMealsCompleted(phil.id);
+      const baseline = this.neighborMealsAtWaitStart[phil.id] ?? 0;
+      neighborMealsDuringWait[phil.id] = Math.max(0, currentNeighborMeals - baseline);
+    }
+
+    const starvationCheck = detectStarvation({
+      philosophers: this.philosophers.map((p) => this.toPhilosopherSnapshot(p)),
+      starvationThresholdTicks: this.config.starvationThresholdTicks,
+      neighborMealsDuringWait,
+    });
+
+    this.starvationDetected = starvationCheck.starvationDetected;
+    this.starvedPhilosopherIds = [...starvationCheck.starvedPhilosopherIds];
+    this.starvationReason = starvationCheck.reason;
+
+    for (const victim of starvationCheck.victims) {
+      if (!this.starvationEpisodeActive.has(victim.philosopherId)) {
+        this.starvationEpisodeActive.add(victim.philosopherId);
+        this.emitEvent({
+          type: 'STARVATION_DETECTED',
+          philosopherId: victim.philosopherId,
+          reason: victim.reason,
+          details: {
+            label: 'starvation detected by threshold',
+            currentWaitTicks: victim.currentWaitTicks,
+            threshold: this.config.starvationThresholdTicks,
+            neighborMealsDuringWait: victim.neighborMealsDuringWait,
+            leftNeighborId: victim.leftNeighborId,
+            rightNeighborId: victim.rightNeighborId,
+          },
+        });
+      }
+    }
+
     return this.getSnapshot();
   }
 
@@ -513,21 +557,7 @@ export class SimulationEngine {
    */
   public getSnapshot(): SimulationSnapshot {
     const philosophers: PhilosopherSnapshot[] = this.philosophers.map((p) =>
-      Object.freeze({
-        id: p.id,
-        name: p.name,
-        state: p.state,
-        leftForkId: p.leftForkId,
-        rightForkId: p.rightForkId,
-        heldForkIds: Object.freeze([...p.heldForkIds]),
-        remainingStateTicks: p.remainingStateTicks,
-        waitStartTick: p.waitStartTick,
-        currentWaitTicks: p.currentWaitTicks,
-        totalWaitTicks: p.totalWaitTicks,
-        longestWaitTicks: p.longestWaitTicks,
-        mealsEaten: p.mealsEaten,
-        mealsCompleted: p.mealsCompleted,
-      })
+      this.toPhilosopherSnapshot(p)
     );
 
     const forks: ForkSnapshot[] = this.forks.map((f) =>
@@ -543,9 +573,9 @@ export class SimulationEngine {
     const detectors: DetectorStatus = Object.freeze({
       deadlocked: this.deadlocked,
       deadlockReason: this.deadlockReason,
-      starvationDetected: false,
-      starvedPhilosopherIds: Object.freeze([]),
-      starvationReason: null,
+      starvationDetected: this.starvationDetected,
+      starvedPhilosopherIds: Object.freeze([...this.starvedPhilosopherIds]),
+      starvationReason: this.starvationReason,
       livelockDetected: false,
       livelockReason: null,
     });
@@ -580,9 +610,14 @@ export class SimulationEngine {
     this.deadlocked = false;
     this.deadlockReason = null;
     this.hasEmittedDeadlockEvent = false;
+    this.starvationDetected = false;
+    this.starvedPhilosopherIds = [];
+    this.starvationReason = null;
+    this.starvationEpisodeActive.clear();
     this.rng.reset(this.config.seed);
 
     const count = this.config.philosopherCount;
+    this.neighborMealsAtWaitStart = Array.from({ length: count }, () => 0);
     this.forks = Array.from({ length: count }, (_, id) => ({
       id,
       ownerId: null,
@@ -628,21 +663,7 @@ export class SimulationEngine {
 
   private createReadonlyView(completedEatersThisTick: readonly number[]): ReadonlySimulationView {
     const philosophers: PhilosopherSnapshot[] = this.philosophers.map((p) =>
-      Object.freeze({
-        id: p.id,
-        name: p.name,
-        state: p.state,
-        leftForkId: p.leftForkId,
-        rightForkId: p.rightForkId,
-        heldForkIds: Object.freeze([...p.heldForkIds]),
-        remainingStateTicks: p.remainingStateTicks,
-        waitStartTick: p.waitStartTick,
-        currentWaitTicks: p.currentWaitTicks,
-        totalWaitTicks: p.totalWaitTicks,
-        longestWaitTicks: p.longestWaitTicks,
-        mealsEaten: p.mealsEaten,
-        mealsCompleted: p.mealsCompleted,
-      })
+      this.toPhilosopherSnapshot(p)
     );
 
     const forks: ForkSnapshot[] = this.forks.map((f) =>
@@ -659,6 +680,40 @@ export class SimulationEngine {
       forks: Object.freeze(forks),
       completedEatersThisTick: Object.freeze([...completedEatersThisTick]),
     });
+  }
+
+  private toPhilosopherSnapshot(p: MutablePhilosopher): PhilosopherSnapshot {
+    const mealCountForAverage = p.mealsCompleted > 0 ? p.mealsCompleted : p.mealsEaten;
+    const averageWaitPerMeal =
+      mealCountForAverage > 0
+        ? Number((p.totalWaitTicks / mealCountForAverage).toFixed(2))
+        : 0;
+
+    return Object.freeze({
+      id: p.id,
+      name: p.name,
+      state: p.state,
+      leftForkId: p.leftForkId,
+      rightForkId: p.rightForkId,
+      heldForkIds: Object.freeze([...p.heldForkIds]),
+      remainingStateTicks: p.remainingStateTicks,
+      waitStartTick: p.waitStartTick,
+      currentWaitTicks: p.currentWaitTicks,
+      totalWaitTicks: p.totalWaitTicks,
+      longestWaitTicks: p.longestWaitTicks,
+      mealsEaten: p.mealsEaten,
+      mealsCompleted: p.mealsCompleted,
+      averageWaitPerMeal,
+    });
+  }
+
+  private getNeighborMealsCompleted(philosopherId: number): number {
+    const count = this.config.philosopherCount;
+    const leftId = (philosopherId + count - 1) % count;
+    const rightId = (philosopherId + 1) % count;
+    const leftMeals = this.philosophers[leftId]?.mealsCompleted ?? 0;
+    const rightMeals = this.philosophers[rightId]?.mealsCompleted ?? 0;
+    return leftMeals + rightMeals;
   }
 
   private applyStrategyAction(action: StrategyAction, stateAtTickStart: readonly PhilosopherState[]): void {
@@ -753,12 +808,27 @@ export class SimulationEngine {
           );
         }
 
+        const waitedTicks = phil.currentWaitTicks;
+        const wasStarved = this.starvationEpisodeActive.has(phil.id);
         const eatTicks = this.sampleEatTicks(phil.id);
         this.transitionPhilosopherState(phil, 'Eating', action.reason);
         phil.remainingStateTicks = eatTicks;
         phil.waitStartTick = null;
         phil.currentWaitTicks = 0;
         phil.mealsEaten += 1;
+
+        if (wasStarved) {
+          this.starvationEpisodeActive.delete(phil.id);
+          this.emitEvent({
+            type: 'STARVATION_ENDED',
+            philosopherId: phil.id,
+            reason: `starvation detected by threshold ended: Philosopher ${phil.id} acquired both forks and started eating after waiting ${waitedTicks} ticks.`,
+            details: {
+              waitedTicks,
+              threshold: this.config.starvationThresholdTicks,
+            },
+          });
+        }
 
         this.emitEvent({
           type: 'MEAL_STARTED',

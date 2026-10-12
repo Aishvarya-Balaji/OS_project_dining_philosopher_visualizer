@@ -39,6 +39,8 @@ export interface PhilosopherSnapshot {
   readonly mealsEaten: number;
   /** Number of meals fully completed (transitioned from Eating back to Thinking). */
   readonly mealsCompleted: number;
+  /** Average wait ticks per meal (0 if no meals eaten yet). */
+  readonly averageWaitPerMeal: number;
 }
 
 export type SimulationEventType =
@@ -62,6 +64,7 @@ export type SimulationEventType =
   | 'MEAL_COMPLETED'
   | 'DEADLOCK_DETECTED'
   | 'STARVATION_DETECTED'
+  | 'STARVATION_ENDED'
   | 'LIVELOCK_DETECTED'
   | 'INVARIANT_VIOLATION';
 
