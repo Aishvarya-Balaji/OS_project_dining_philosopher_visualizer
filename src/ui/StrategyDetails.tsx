@@ -24,9 +24,9 @@ export function StrategyDetails({ snapshot }: StrategyDetailsProps) {
         <div className="strategy-detail-body">
           <p className="strategy-explanation">
             <strong>Naive Two-Phase Fork Acquisition:</strong> Every Hungry philosopher first
-            acquires their left fork <code>F_i</code>, then waits until a subsequent tick to
-            request their right fork <code>F_(i+1)%N</code> while continuing to hold{' '}
-            <code>F_i</code>. Because all four Coffman conditions can hold simultaneously,
+            acquires their left fork <code>F_i</code>, then waits until a subsequent
+            cycle to request their right fork <code>F_(i+1)%N</code> while continuing to
+            hold <code>F_i</code>. Because all four Coffman conditions can hold simultaneously,
             symmetric arrivals cause circular-wait deadlock.
           </p>
           <div className="detail-badges-row">

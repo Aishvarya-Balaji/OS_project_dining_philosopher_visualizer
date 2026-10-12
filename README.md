@@ -1,5 +1,7 @@
 # Dining Philosophers OS Concurrency Simulator
 
+> **Live Demo:** [https://os-project-dining-philosophers.vercel.app/](https://os-project-dining-philosophers.vercel.app/)
+
 An interactive, deterministic Operating Systems simulation of the classic **Dining Philosophers Problem** ($N = 5$ philosophers and $5$ shared forks). Built with **Vite + React + strict TypeScript + plain CSS/SVG + Vitest**, this simulator compares four distinct resource-coordination strategies, reliably demonstrates **deadlock**, **threshold-detected starvation**, and **simulated CAS livelock**, and exposes the engine's actual snapshots, synchronization internals, and append-only event log.
 
 ---

@@ -63,7 +63,7 @@ export const STRATEGY_TRADEOFF_NOTES: readonly StrategyTradeoffNote[] = [
     strategyKey: 'cas',
     title: 'Lock-free (simulated CAS — Fixed vs. Random Back-off)',
     mechanism:
-      'Attempts single-fork CAS on left fork, then right fork on the next tick; rolls back left fork and backs off if right-fork CAS fails.',
+      'Attempts single-fork CAS on left fork, then right fork on the next cycle; rolls back left fork and backs off if right-fork CAS fails.',
     tradeoff:
       'Avoids passive deadlock because failed second-fork claims release the first fork, but symmetric fixed back-off causes synchronized livelock until seeded randomized back-off breaks symmetry.',
   },
@@ -104,15 +104,15 @@ export function ComparisonPanel({
               Cross-Strategy Batch Comparison ({scenario.name}, Seed {seed})
             </h2>
             <span className="panel-subtitle">
-              Headless deterministic batch runs over {ticksToRun} ticks · Starvation
-              threshold ≥{scenario.config.starvationThresholdTicks ?? 18}t · Livelock
-              window {scenario.config.livelockWindowTicks ?? 12}t
+              Headless deterministic batch runs over {ticksToRun} cycles · Starvation
+              threshold ≥{scenario.config.starvationThresholdTicks ?? 18}c · Livelock
+              window {scenario.config.livelockWindowTicks ?? 12}c
             </span>
           </div>
 
           <div className="comparison-controls">
             <label htmlFor="comparison-ticks-select" className="control-label-inline">
-              Horizon:
+              Cycles:
             </label>
             <select
               id="comparison-ticks-select"
@@ -121,9 +121,9 @@ export function ComparisonPanel({
               value={ticksToRun}
               onChange={(e) => setTicksToRun(Number(e.target.value))}
             >
-              <option value={30}>30 ticks</option>
-              <option value={60}>60 ticks</option>
-              <option value={100}>100 ticks</option>
+              <option value={30}>30 cycles</option>
+              <option value={60}>60 cycles</option>
+              <option value={100}>100 cycles</option>
             </select>
           </div>
         </div>
@@ -214,7 +214,7 @@ export function ComparisonPanel({
             <strong>Starvation Note (Threshold-Detected):</strong> Starvation is reported
             as <code>starvation detected by threshold</code> when a philosopher waits at
             least <code>{scenario.config.starvationThresholdTicks ?? 18}</code>{' '}
-            consecutive ticks while its neighbors complete meals during that interval. In
+            consecutive cycles while its neighbors complete meals during that interval. In
             a finite simulation run, a threshold flag measures severe unfairness over a
             bounded window rather than a mathematical proof of infinite future waiting.
           </p>
@@ -222,7 +222,7 @@ export function ComparisonPanel({
             <strong>Simulated CAS Note (Model vs. Hardware Atomics):</strong>{' '}
             <code>Lock-free (simulated CAS)</code> models single-fork compare-and-swap
             semantics (<code>CAS(fork[f], null → i)</code>) one fork at a time in discrete
-            deterministic ticks with rollback and back-off. It is an algorithmic OS model
+            deterministic cycles with rollback and back-off. It is an algorithmic OS model
             and not real hardware atomic CPU instruction execution (such as{' '}
             <code>LOCK CMPXCHG</code> across kernel threads).
           </p>

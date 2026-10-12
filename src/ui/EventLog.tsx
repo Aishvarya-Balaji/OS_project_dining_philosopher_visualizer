@@ -140,7 +140,7 @@ export function EventLog({ events }: EventLogProps) {
             >
               <div className="event-item-meta">
                 <span className="event-id">#{evt.id}</span>
-                <span className="event-tick">T={evt.tick}</span>
+                <span className="event-tick">Cycle {evt.tick}</span>
                 <span className="event-type-badge">{evt.type}</span>
                 {evt.philosopherId !== undefined && (
                   <span className="event-entity-tag">P{evt.philosopherId}</span>

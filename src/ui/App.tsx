@@ -211,15 +211,15 @@ export function App() {
           <div className="top-nav-stats" aria-label="Simulation Statistics">
             <div className="stat-inline">
               <span className="stat-number">{snapshot.tick}</span>
-              <span className="stat-label">Ticks</span>
+              <span className="stat-label">CYCLES</span>
             </div>
             <div className="stat-inline">
-              <span className="stat-number">{meanWaitTicks}t</span>
-              <span className="stat-label">Mean Wait ({snapshot.totalMealsEaten} eaten)</span>
+              <span className="stat-number">{meanWaitTicks}</span>
+              <span className="stat-label">MEAN RULES</span>
             </div>
             <div className="stat-inline">
               <span className="stat-number">{snapshot.totalMealsCompleted}</span>
-              <span className="stat-label">Meals Completed</span>
+              <span className="stat-label">MEALS COMPLETED</span>
             </div>
           </div>
         </header>
@@ -306,7 +306,7 @@ export function DetectorBanners({ snapshot }: { readonly snapshot: SimulationSna
         <div className="banner banner-starvation" data-detector="starvation">
           <div className="banner-title">
             STARVATION ALERT — <span>starvation detected by threshold</span> (≥
-            {snapshot.config.starvationThresholdTicks} wait ticks)
+            {snapshot.config.starvationThresholdTicks} wait cycles)
           </div>
           <p className="banner-body">{starvationReason}</p>
         </div>
@@ -316,7 +316,7 @@ export function DetectorBanners({ snapshot }: { readonly snapshot: SimulationSna
         <div className="banner banner-livelock" data-detector="livelock">
           <div className="banner-title">
             SUSPECTED LIVELOCK — Active CAS Retries &amp; Rollbacks With Zero Meals in
-            Window ({snapshot.config.livelockWindowTicks} ticks)
+            Window ({snapshot.config.livelockWindowTicks} cycles)
           </div>
           <p className="banner-body">{livelockReason}</p>
         </div>

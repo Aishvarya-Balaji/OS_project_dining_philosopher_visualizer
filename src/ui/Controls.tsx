@@ -48,7 +48,7 @@ export const STRATEGY_OPTIONS: ReadonlyArray<{
     value: 'cas',
     label: 'Lock-free (simulated CAS)',
     summary:
-      'Deterministic single-fork compare-and-swap per tick. If right-fork CAS fails, rolls back left fork and backs off (fixed vs. seeded random).',
+      'Deterministic single-fork compare-and-swap per cycle. If right-fork CAS fails, rolls back left fork and backs off (fixed vs. seeded random).',
   },
 ];
 
@@ -106,7 +106,7 @@ export function Controls({
     <aside className="panel controls-panel" aria-label="Simulation Controls">
       <div className="panel-header-row">
         <h2 className="panel-title">Simulation Setup &amp; Controls</h2>
-        <span className="mono-meta">Seed #{seed} · T={tick}</span>
+        <span className="mono-meta">Seed #{seed} · Cycle {tick}</span>
       </div>
 
       {/* Primary Action Toolbar */}
@@ -203,15 +203,15 @@ export function Controls({
               value={casBackoffMode}
               onChange={(e) => onCasBackoffModeChange(e.target.value as CasBackoffMode)}
             >
-              <option value="fixed">Fixed Back-off (2 ticks — demonstrates livelock)</option>
+              <option value="fixed">Fixed Back-off (2 cycles — demonstrates livelock)</option>
               <option value="random">
-                Seeded Randomized Back-off (1..5 ticks — breaks symmetry)
+                Seeded Randomized Back-off (1..5 cycles — breaks symmetry)
               </option>
             </select>
           </div>
         )}
 
-        {/* 3, 4 & 5. Random Seed + Reroll + Tick Speed */}
+        {/* 3, 4 & 5. Random Seed + Reroll + Cycle Speed */}
         <div className="controls-two-col">
           <div className="control-group">
             <label htmlFor="seed-input" className="control-label">
@@ -240,7 +240,7 @@ export function Controls({
 
           <div className="control-group">
             <label htmlFor="speed-select" className="control-label">
-              Tick Speed
+              Cycle Speed
             </label>
             <select
               id="speed-select"

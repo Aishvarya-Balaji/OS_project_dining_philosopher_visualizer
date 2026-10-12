@@ -39,7 +39,10 @@ describe('Step 9 & 10 — UI, SVG Table, Controls, Detectors, Event Log, and Com
     expect(html).toContain('aria-label="Pause simulation"');
     expect(html).toContain('aria-label="Step one tick"');
     expect(html).toContain('aria-label="Reset simulation"');
-    expect(html).toContain('Tick 0');
+    expect(html).toContain('CYCLES');
+    expect(html).toContain('MEAN RULES');
+    expect(html).toContain('MEALS COMPLETED');
+    expect(html).toContain('CYCLE 0');
     expect(html).toContain('SIMULATION_INIT');
   });
 

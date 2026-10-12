@@ -198,13 +198,13 @@ export function SimulationTable({
             strokeWidth="1"
           />
 
-          {/* Small Central Readout: Current Tick and Selected Strategy */}
+          {/* Small Central Readout: Current Cycle and Selected Strategy */}
           <g className="table-center-info" textAnchor="middle">
             <text x={CENTER_X} y={CENTER_Y - 18} className="svg-center-label">
               {snapshot.config.strategy.toUpperCase()}
             </text>
             <text x={CENTER_X} y={CENTER_Y + 8} className="svg-center-tick">
-              Tick {snapshot.tick}
+              CYCLE {snapshot.tick}
             </text>
             {isDeadlocked ? (
               <text x={CENTER_X} y={CENTER_Y + 30} className="svg-center-alert">
@@ -285,7 +285,7 @@ export function SimulationTable({
                 key={fork.id}
                 className={`svg-fork-group ${isHeld ? 'fork-held' : 'fork-free'}`}
                 style={{
-                  transform: `translate(${pos.x}px, ${pos.y}px)`,
+                  transform: `translate(${pos.x}px, ${pos.y}px) scale(${isHeld ? 1.24 : 1})`,
                 }}
                 data-fork-id={fork.id}
                 data-owner-id={fork.ownerId ?? 'free'}
@@ -375,11 +375,20 @@ export function SimulationTable({
                 ? phil.heldForkIds.map((id) => `F${id}`).join(', ')
                 : '—';
 
+            const philScale =
+              phil.state === 'Eating' || phil.heldForkIds.length >= 2
+                ? 1.16
+                : phil.heldForkIds.length === 1
+                  ? 1.09
+                  : 1;
+
             return (
               <g
                 key={phil.id}
                 className={`svg-philosopher-group state-${phil.state.toLowerCase()}`}
-                transform={`translate(${pt.x}, ${pt.y})`}
+                style={{
+                  transform: `translate(${pt.x}px, ${pt.y}px) scale(${philScale})`,
+                }}
                 data-philosopher-id={phil.id}
                 data-state={phil.state}
               >
