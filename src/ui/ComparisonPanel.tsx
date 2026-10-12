@@ -1,0 +1,2 @@
+// ComparisonPanel component placeholder
+export {};

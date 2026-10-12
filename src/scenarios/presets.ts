@@ -1,0 +1,2 @@
+// Scenario presets placeholder
+export {};

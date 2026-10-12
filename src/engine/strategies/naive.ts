@@ -1,0 +1,2 @@
+// Naive strategy placeholder
+export {};

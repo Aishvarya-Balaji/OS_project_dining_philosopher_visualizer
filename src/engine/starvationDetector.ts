@@ -1,0 +1,2 @@
+// Starvation detector placeholder
+export {};

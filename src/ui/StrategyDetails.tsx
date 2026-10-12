@@ -1,0 +1,2 @@
+// StrategyDetails component placeholder
+export {};

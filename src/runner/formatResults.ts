@@ -1,0 +1,2 @@
+// Result formatter placeholder
+export {};

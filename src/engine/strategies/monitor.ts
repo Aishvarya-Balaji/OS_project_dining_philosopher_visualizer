@@ -1,0 +1,2 @@
+// Monitor strategy placeholder
+export {};

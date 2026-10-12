@@ -1,0 +1,2 @@
+// EventLog component placeholder
+export {};
