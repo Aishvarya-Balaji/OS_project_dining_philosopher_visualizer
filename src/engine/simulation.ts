@@ -1,6 +1,7 @@
 import { detectDeadlock } from './deadlockDetector';
 import { SeededRng } from './rng';
 import { NaiveStrategy } from './strategies/naive';
+import { SemaphoreStrategy } from './strategies/semaphore';
 import {
   DetectorStatus,
   ForkSnapshot,
@@ -239,6 +240,8 @@ export function createStrategyByName(name: StrategyName): Strategy {
   switch (name) {
     case 'naive':
       return new NaiveStrategy();
+    case 'semaphore':
+      return new SemaphoreStrategy();
     default:
       return new AtomicBothForksDefaultStrategy();
   }
