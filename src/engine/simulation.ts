@@ -1,4 +1,6 @@
+import { detectDeadlock } from './deadlockDetector';
 import { SeededRng } from './rng';
+import { NaiveStrategy } from './strategies/naive';
 import {
   DetectorStatus,
   ForkSnapshot,
@@ -14,6 +16,7 @@ import {
   SimulationSnapshot,
   Strategy,
   StrategyAction,
+  StrategyName,
   StrategyStepResult,
 } from './types';
 
@@ -232,6 +235,15 @@ export class AtomicBothForksDefaultStrategy implements Strategy {
   }
 }
 
+export function createStrategyByName(name: StrategyName): Strategy {
+  switch (name) {
+    case 'naive':
+      return new NaiveStrategy();
+    default:
+      return new AtomicBothForksDefaultStrategy();
+  }
+}
+
 interface MutablePhilosopher {
   id: number;
   name: string;
@@ -283,20 +295,28 @@ interface MutableFork {
  * 6. Phase 5 (Global Invariant Verification):
  *    - Assert one owner per fork, bidirectional fork-philosopher consistency, valid adjacent forks only,
  *      and that every `'Eating'` philosopher holds both neighboring forks while `'Thinking'`/`'Hungry'` hold none.
+ * 7. Phase 6 (Deadlock Detection):
+ *    - Evaluate `detectDeadlock`. When passive circular-wait deadlock is reached, emit a single
+ *      `DEADLOCK_DETECTED` event describing the cycle and the four Coffman conditions.
  */
 export class SimulationEngine {
   private config: ResolvedSimulationConfig;
   private strategy: Strategy;
+  private hasCustomStrategy: boolean;
   private rng: SeededRng;
   private tick = 0;
   private nextEventId = 1;
   private philosophers: MutablePhilosopher[] = [];
   private forks: MutableFork[] = [];
   private events: SimulationEvent[] = [];
+  private deadlocked = false;
+  private deadlockReason: string | null = null;
+  private hasEmittedDeadlockEvent = false;
 
   constructor(config: SimulationConfig = {}, strategy?: Strategy) {
     this.config = resolveSimulationConfig(config);
-    this.strategy = strategy ?? new AtomicBothForksDefaultStrategy();
+    this.hasCustomStrategy = strategy !== undefined;
+    this.strategy = strategy ?? createStrategyByName(this.config.strategy);
     this.rng = new SeededRng(this.config.seed);
     this.initializeState();
   }
@@ -308,9 +328,13 @@ export class SimulationEngine {
   public reset(newConfig?: SimulationConfig, newStrategy?: Strategy): SimulationSnapshot {
     if (newConfig !== undefined) {
       this.config = resolveSimulationConfig(newConfig);
+      if (newStrategy === undefined && !this.hasCustomStrategy) {
+        this.strategy = createStrategyByName(this.config.strategy);
+      }
     }
     if (newStrategy !== undefined) {
       this.strategy = newStrategy;
+      this.hasCustomStrategy = true;
     }
     this.initializeState();
     return this.getSnapshot();
@@ -436,6 +460,32 @@ export class SimulationEngine {
     // Phase 5: Global invariant check
     this.assertInvariants();
 
+    // Phase 6: Deadlock detection
+    const deadlockCheck = detectDeadlock({
+      philosophers: this.philosophers,
+      forks: this.forks,
+      strategy: this.strategy.name,
+    });
+    this.deadlocked = deadlockCheck.deadlocked;
+    this.deadlockReason = deadlockCheck.reason;
+
+    if (deadlockCheck.deadlocked && !this.hasEmittedDeadlockEvent) {
+      this.hasEmittedDeadlockEvent = true;
+      this.emitEvent({
+        type: 'DEADLOCK_DETECTED',
+        reason: deadlockCheck.reason!,
+        details: deadlockCheck.coffmanConditions
+          ? {
+              cycle: deadlockCheck.cycle ?? '',
+              mutualExclusion: deadlockCheck.coffmanConditions.mutualExclusion,
+              holdAndWait: deadlockCheck.coffmanConditions.holdAndWait,
+              noPreemption: deadlockCheck.coffmanConditions.noPreemption,
+              circularWait: deadlockCheck.coffmanConditions.circularWait,
+            }
+          : undefined,
+      });
+    }
+
     return this.getSnapshot();
   }
 
@@ -485,8 +535,8 @@ export class SimulationEngine {
     const totalMealsCompleted = philosophers.reduce((sum, p) => sum + p.mealsCompleted, 0);
 
     const detectors: DetectorStatus = Object.freeze({
-      deadlocked: false,
-      deadlockReason: null,
+      deadlocked: this.deadlocked,
+      deadlockReason: this.deadlockReason,
       starvationDetected: false,
       starvedPhilosopherIds: Object.freeze([]),
       starvationReason: null,
@@ -521,6 +571,9 @@ export class SimulationEngine {
     this.tick = 0;
     this.nextEventId = 1;
     this.events = [];
+    this.deadlocked = false;
+    this.deadlockReason = null;
+    this.hasEmittedDeadlockEvent = false;
     this.rng.reset(this.config.seed);
 
     const count = this.config.philosopherCount;
