@@ -87,7 +87,7 @@ const starvationBiasedConfig = Object.freeze<SimulationConfig>({
 
 /**
  * Starvation (Biased) Preset:
- * Asymmetric timing profile where fast-cycling neighbors P0 and P2 (1-tick think, 3-tick eat)
+ * Asymmetric timing profile where fast-cycling neighbors P0 and P2 (1-tick think, 4-tick eat)
  * overlap their meals across P1, causing P1 to wait past the threshold under the Monitor strategy
  * before P3 eventually disrupts the cycle so P1 can eat.
  */
@@ -99,10 +99,38 @@ export const STARVATION_PRESET: ScenarioPreset = Object.freeze<ScenarioPreset>({
   config: starvationBiasedConfig,
 });
 
+const casLivelockConfig = Object.freeze<SimulationConfig>({
+  philosopherCount: 5,
+  seed: 42,
+  strategy: 'cas',
+  initialStates: ['Hungry', 'Hungry', 'Hungry', 'Hungry', 'Hungry'],
+  thinkTicksRange: [3, 5],
+  eatTicksRange: [2, 3],
+  starvationThresholdTicks: 18,
+  livelockWindowTicks: 10,
+  casBackoffMode: 'fixed',
+  casFixedBackoffTicks: 2,
+  casMaxRandomBackoffTicks: 5,
+});
+
+/**
+ * CAS Livelock Preset:
+ * All five philosophers start Hungry simultaneously and use Simulated CAS with fixed back-off,
+ * causing them to synchronously claim left forks, fail right-fork CAS, roll back, and retry forever.
+ */
+export const CAS_LIVELOCK_PRESET: ScenarioPreset = Object.freeze<ScenarioPreset>({
+  id: 'cas-livelock',
+  name: 'CAS Livelock (Fixed Back-off)',
+  description:
+    'Symmetric initial state with fixed CAS back-off where all five philosophers synchronously claim left forks, fail right-fork CAS, roll back, and retry indefinitely.',
+  config: casLivelockConfig,
+});
+
 export const SCENARIO_PRESETS: readonly ScenarioPreset[] = Object.freeze([
   NORMAL_PRESET,
   FORCE_DEADLOCK_PRESET,
   STARVATION_PRESET,
+  CAS_LIVELOCK_PRESET,
 ]);
 
 export function getScenarioPreset(id: string): ScenarioPreset {

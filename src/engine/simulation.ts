@@ -1,6 +1,8 @@
 import { detectDeadlock } from './deadlockDetector';
+import { detectLivelock } from './livelockDetector';
 import { SeededRng } from './rng';
 import { detectStarvation } from './starvationDetector';
+import { SimulatedCasStrategy } from './strategies/cas';
 import { MonitorStrategy } from './strategies/monitor';
 import { NaiveStrategy } from './strategies/naive';
 import { SemaphoreStrategy } from './strategies/semaphore';
@@ -246,6 +248,8 @@ export function createStrategyByName(name: StrategyName): Strategy {
       return new SemaphoreStrategy();
     case 'monitor':
       return new MonitorStrategy();
+    case 'cas':
+      return new SimulatedCasStrategy();
     default:
       return new AtomicBothForksDefaultStrategy();
   }
@@ -305,6 +309,7 @@ interface MutableFork {
  * 7. Phase 6 (Deadlock Detection):
  *    - Evaluate `detectDeadlock`. When passive circular-wait deadlock is reached, emit a single
  *      `DEADLOCK_DETECTED` event describing the cycle and the four Coffman conditions.
+ * 8. Phase 7 (Threshold-Based Starvation Detection) & Phase 8 (Suspected Livelock Detection).
  */
 export class SimulationEngine {
   private config: ResolvedSimulationConfig;
@@ -324,6 +329,10 @@ export class SimulationEngine {
   private starvationReason: string | null = null;
   private starvationEpisodeActive = new Set<number>();
   private neighborMealsAtWaitStart: number[] = [];
+  private livelockDetected = false;
+  private livelockReason: string | null = null;
+  private hasEmittedLivelockEvent = false;
+  private lastMealCompletedTick = 0;
 
   constructor(config: SimulationConfig = {}, strategy?: Strategy) {
     this.config = resolveSimulationConfig(config);
@@ -383,6 +392,8 @@ export class SimulationEngine {
         this.releaseForkInternal(phil, phil.rightForkId, `Philosopher ${phil.id} finished eating and released right fork ${phil.rightForkId}.`);
 
         phil.mealsCompleted += 1;
+        this.lastMealCompletedTick = this.tick;
+        this.hasEmittedLivelockEvent = false;
         this.emitEvent({
           type: 'MEAL_COMPLETED',
           philosopherId: phil.id,
@@ -473,9 +484,11 @@ export class SimulationEngine {
     // Phase 5: Global invariant check
     this.assertInvariants();
 
+    const philosopherSnapshots = this.philosophers.map((p) => this.toPhilosopherSnapshot(p));
+
     // Phase 6: Deadlock detection
     const deadlockCheck = detectDeadlock({
-      philosophers: this.philosophers.map((p) => this.toPhilosopherSnapshot(p)),
+      philosophers: philosopherSnapshots,
       forks: this.forks,
       strategy: this.strategy.name,
     });
@@ -508,7 +521,7 @@ export class SimulationEngine {
     }
 
     const starvationCheck = detectStarvation({
-      philosophers: this.philosophers.map((p) => this.toPhilosopherSnapshot(p)),
+      philosophers: philosopherSnapshots,
       starvationThresholdTicks: this.config.starvationThresholdTicks,
       neighborMealsDuringWait,
     });
@@ -534,6 +547,32 @@ export class SimulationEngine {
           },
         });
       }
+    }
+
+    // Phase 8: Suspected Livelock detection
+    const livelockCheck = detectLivelock({
+      tick: this.tick,
+      livelockWindowTicks: this.config.livelockWindowTicks,
+      strategy: this.strategy.name,
+      philosophers: philosopherSnapshots,
+      events: this.events,
+      lastMealCompletedTick: this.lastMealCompletedTick,
+    });
+
+    this.livelockDetected = livelockCheck.livelockDetected;
+    this.livelockReason = livelockCheck.reason;
+
+    if (livelockCheck.livelockDetected && !this.hasEmittedLivelockEvent) {
+      this.hasEmittedLivelockEvent = true;
+      this.emitEvent({
+        type: 'LIVELOCK_DETECTED',
+        reason: livelockCheck.reason!,
+        details: {
+          windowTicks: this.config.livelockWindowTicks,
+          attemptsInWindow: livelockCheck.attemptsInWindow,
+          rollbacksInWindow: livelockCheck.rollbacksInWindow,
+        },
+      });
     }
 
     return this.getSnapshot();
@@ -576,8 +615,8 @@ export class SimulationEngine {
       starvationDetected: this.starvationDetected,
       starvedPhilosopherIds: Object.freeze([...this.starvedPhilosopherIds]),
       starvationReason: this.starvationReason,
-      livelockDetected: false,
-      livelockReason: null,
+      livelockDetected: this.livelockDetected,
+      livelockReason: this.livelockReason,
     });
 
     const strategyState = this.strategy.getInternalState
@@ -614,6 +653,10 @@ export class SimulationEngine {
     this.starvedPhilosopherIds = [];
     this.starvationReason = null;
     this.starvationEpisodeActive.clear();
+    this.livelockDetected = false;
+    this.livelockReason = null;
+    this.hasEmittedLivelockEvent = false;
+    this.lastMealCompletedTick = 0;
     this.rng.reset(this.config.seed);
 
     const count = this.config.philosopherCount;
