@@ -794,3 +794,53 @@ code {
   color: #6ee7b7;
   border: 1px solid rgba(52, 211, 153, 0.35);
 }
+
+/* Comparison Notes & Strategy Trade-offs */
+.comparison-notes-callout {
+  margin-top: 0.95rem;
+  padding: 0.75rem 0.95rem;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid #334155;
+  border-left: 4px solid #38bdf8;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.comparison-note-item {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.tradeoffs-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.85rem;
+}
+
+.tradeoff-card {
+  background: #0f172a;
+  border: 1px solid var(--border-accent);
+  border-radius: 9px;
+  padding: 0.8rem 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.tradeoff-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.tradeoff-text {
+  margin: 0;
+  font-size: 0.81rem;
+  color: var(--text-secondary);
+}
+

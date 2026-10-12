@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createStrategyByName, SimulationEngine } from '../src/engine/simulation';
+import { runStrategyBatchComparison } from '../src/runner/batchRunner';
 import {
   CAS_LIVELOCK_PRESET,
   FORCE_DEADLOCK_PRESET,
@@ -9,12 +10,16 @@ import {
   STARVATION_PRESET,
 } from '../src/scenarios/presets';
 import { App, buildSimulationConfig, DetectorBanners } from '../src/ui/App';
-import { ComparisonPanel } from '../src/ui/ComparisonPanel';
+import {
+  COMPARISON_SPECS,
+  ComparisonPanel,
+  STRATEGY_TRADEOFF_NOTES,
+} from '../src/ui/ComparisonPanel';
 import { EventLog } from '../src/ui/EventLog';
 import { SimulationTable } from '../src/ui/SimulationTable';
 import { StrategyDetails } from '../src/ui/StrategyDetails';
 
-describe('Step 9 — UI, SVG Table, Controls, Detectors, and Event Log', () => {
+describe('Step 9 & 10 — UI, SVG Table, Controls, Detectors, Event Log, and Comparison Panel', () => {
   it('renders App inside React StrictMode at Tick 0 with all accessible controls and initial snapshot', () => {
     const html = renderToStaticMarkup(
       <StrictMode>
@@ -134,5 +139,37 @@ describe('Step 9 — UI, SVG Table, Controls, Detectors, and Event Log', () => {
     expect(snapReset.tick).toBe(0);
     expect(snapReset.config.strategy).toBe('monitor');
     expect(snapReset.config.seed).toBe(42);
+  });
+
+  it('connects ComparisonPanel to real batchRunner rows, strategy trade-offs, and explicit modeling notes', () => {
+    const deadlockHtml = renderToStaticMarkup(
+      <ComparisonPanel scenario={FORCE_DEADLOCK_PRESET} seed={42} />
+    );
+    const expectedDeadlockRows = runStrategyBatchComparison({
+      scenario: FORCE_DEADLOCK_PRESET,
+      seed: 42,
+      ticks: 60,
+      strategies: COMPARISON_SPECS,
+    });
+
+    // Verify Naive deadlock (tick 1) and non-deadlocking Semaphore/Monitor/CAS rows are rendered from real data
+    expect(deadlockHtml).toContain('Yes (tick 1)');
+    for (const row of expectedDeadlockRows) {
+      expect(deadlockHtml).toContain(row.strategyLabel);
+      expect(deadlockHtml).toContain(`${row.totalMealsCompleted}`);
+    }
+
+    // Verify starvation scenario comparison row shows "starvation detected by threshold (P1)"
+    const starvationHtml = renderToStaticMarkup(
+      <ComparisonPanel scenario={STARVATION_PRESET} seed={42} />
+    );
+    expect(starvationHtml).toContain('starvation detected by threshold (P1)');
+
+    // Verify explicit modeling & detector notes and all 4 static strategy trade-off cards
+    expect(starvationHtml).toContain('Starvation Note (Threshold-Detected):');
+    expect(starvationHtml).toContain('Simulated CAS Note (Model vs. Hardware Atomics):');
+    for (const note of STRATEGY_TRADEOFF_NOTES) {
+      expect(starvationHtml).toContain(note.title);
+    }
   });
 });
