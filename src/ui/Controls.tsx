@@ -56,11 +56,16 @@ export const SPEED_PRESETS: ReadonlyArray<{
   readonly ms: number;
   readonly label: string;
 }> = [
-  { ms: 1000, label: '0.5x Slow (1000 ms/tick)' },
-  { ms: 600, label: '1x Normal (600 ms/tick)' },
-  { ms: 300, label: '2x Fast (300 ms/tick)' },
-  { ms: 120, label: '5x Turbo (120 ms/tick)' },
+  { ms: 1000, label: '0.5x Slow (1000 ms)' },
+  { ms: 600, label: '1x Normal (600 ms)' },
+  { ms: 300, label: '2x Fast (300 ms)' },
+  { ms: 120, label: '5x Turbo (120 ms)' },
 ];
+
+export function nextDeterministicSeed(currentSeed: number): number {
+  const next = ((Math.imul(currentSeed | 0, 1664525) + 1013904223) >>> 0) % 9973;
+  return next === currentSeed ? next + 1 : Math.max(1, next);
+}
 
 export function Controls({
   scenarioId,
@@ -93,10 +98,57 @@ export function Controls({
     }
   };
 
+  const handleRerollSeed = () => {
+    onSeedChange(nextDeterministicSeed(seed));
+  };
+
   return (
-    <section className="panel controls-panel" aria-label="Simulation Controls">
-      <div className="controls-grid">
-        {/* Scenario Preset Selector */}
+    <aside className="panel controls-panel" aria-label="Simulation Controls">
+      <div className="panel-header-row">
+        <h2 className="panel-title">Simulation Setup &amp; Controls</h2>
+        <span className="mono-meta">Seed #{seed} · T={tick}</span>
+      </div>
+
+      {/* Primary Action Toolbar */}
+      <div className="playback-toolbar" role="group" aria-label="Playback actions">
+        <button
+          type="button"
+          className="btn btn-primary"
+          aria-label="Start simulation"
+          disabled={isRunning || isDeadlocked}
+          onClick={onStart}
+        >
+          Start
+        </button>
+        <button
+          type="button"
+          className="btn btn-outline"
+          aria-label="Pause simulation"
+          disabled={!isRunning}
+          onClick={onPause}
+        >
+          Pause
+        </button>
+        <button
+          type="button"
+          className="btn btn-outline"
+          aria-label="Step one tick"
+          onClick={onStep}
+        >
+          Step
+        </button>
+        <button
+          type="button"
+          className="btn btn-reset"
+          aria-label="Reset simulation"
+          onClick={onReset}
+        >
+          Reset
+        </button>
+      </div>
+
+      <div className="controls-stack">
+        {/* 1. Scenario Preset Selector */}
         <div className="control-group">
           <label htmlFor="scenario-select" className="control-label">
             Scenario Preset
@@ -117,7 +169,7 @@ export function Controls({
           <p className="control-hint">{activeScenario.description}</p>
         </div>
 
-        {/* Strategy Selector */}
+        {/* 2. Synchronization Strategy Selector */}
         <div className="control-group">
           <label htmlFor="strategy-select" className="control-label">
             Synchronization Strategy
@@ -138,134 +190,74 @@ export function Controls({
           <p className="control-hint">{activeStrategyOption.summary}</p>
         </div>
 
-        {/* CAS Back-off Mode & Seed Controls */}
-        <div className="control-group control-group-compact">
-          <div className="sub-control-row">
-            <div className="sub-control">
-              <label htmlFor="seed-input" className="control-label">
-                PRNG Seed
-              </label>
-              <div className="seed-input-row">
-                <input
-                  id="seed-input"
-                  type="number"
-                  aria-label="Deterministic RNG seed"
-                  className="control-input"
-                  value={seed}
-                  onChange={(e) => handleSeedInputChange(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-xs"
-                  onClick={() => onSeedChange(42)}
-                  title="Reset seed to default 42"
-                >
-                  Seed 42
-                </button>
-              </div>
-            </div>
+        {/* Optional CAS Back-off Selector */}
+        {strategy === 'cas' && (
+          <div className="control-group cas-backoff-box">
+            <label htmlFor="cas-backoff-select" className="control-label">
+              Simulated CAS Back-off Mode
+            </label>
+            <select
+              id="cas-backoff-select"
+              aria-label="CAS back-off mode"
+              className="control-select"
+              value={casBackoffMode}
+              onChange={(e) => onCasBackoffModeChange(e.target.value as CasBackoffMode)}
+            >
+              <option value="fixed">Fixed Back-off (2 ticks — demonstrates livelock)</option>
+              <option value="random">
+                Seeded Randomized Back-off (1..5 ticks — breaks symmetry)
+              </option>
+            </select>
+          </div>
+        )}
 
-            <div className="sub-control">
-              <label htmlFor="speed-select" className="control-label">
-                Tick Speed ({speedMs} ms)
-              </label>
-              <select
-                id="speed-select"
-                aria-label="Simulation speed"
-                className="control-select"
-                value={speedMs}
-                onChange={(e) => onSpeedChange(Number(e.target.value))}
+        {/* 3, 4 & 5. Random Seed + Reroll + Tick Speed */}
+        <div className="controls-two-col">
+          <div className="control-group">
+            <label htmlFor="seed-input" className="control-label">
+              Random Seed
+            </label>
+            <div className="seed-input-row">
+              <input
+                id="seed-input"
+                type="number"
+                aria-label="Deterministic RNG seed"
+                className="control-input mono-input"
+                value={seed}
+                onChange={(e) => handleSeedInputChange(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn btn-outline btn-reroll"
+                aria-label="Reroll seed"
+                onClick={handleRerollSeed}
+                title="Reroll deterministic PRNG seed"
               >
-                {SPEED_PRESETS.map((preset) => (
-                  <option key={preset.ms} value={preset.ms}>
-                    {preset.label}
-                  </option>
-                ))}
-              </select>
+                Reroll
+              </button>
             </div>
           </div>
 
-          {strategy === 'cas' && (
-            <div className="cas-backoff-box">
-              <label htmlFor="cas-backoff-select" className="control-label">
-                Simulated CAS Back-off Mode
-              </label>
-              <select
-                id="cas-backoff-select"
-                aria-label="CAS back-off mode"
-                className="control-select"
-                value={casBackoffMode}
-                onChange={(e) => onCasBackoffModeChange(e.target.value as CasBackoffMode)}
-              >
-                <option value="fixed">Fixed Back-off (2 ticks — demonstrates livelock)</option>
-                <option value="random">
-                  Seeded Randomized Back-off (1..5 ticks — breaks symmetry)
+          <div className="control-group">
+            <label htmlFor="speed-select" className="control-label">
+              Tick Speed
+            </label>
+            <select
+              id="speed-select"
+              aria-label="Simulation speed"
+              className="control-select"
+              value={speedMs}
+              onChange={(e) => onSpeedChange(Number(e.target.value))}
+            >
+              {SPEED_PRESETS.map((preset) => (
+                <option key={preset.ms} value={preset.ms}>
+                  {preset.label}
                 </option>
-              </select>
-            </div>
-          )}
+              ))}
+            </select>
+          </div>
         </div>
       </div>
-
-      {/* Action Buttons & Live Status Bar */}
-      <div className="playback-bar">
-        <div className="playback-buttons" role="group" aria-label="Playback actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            aria-label="Start simulation"
-            disabled={isRunning || isDeadlocked}
-            onClick={onStart}
-          >
-            Start
-          </button>
-          <button
-            type="button"
-            className="btn btn-warning"
-            aria-label="Pause simulation"
-            disabled={!isRunning}
-            onClick={onPause}
-          >
-            Pause
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            aria-label="Step one tick"
-            onClick={onStep}
-          >
-            Step (+1 Tick)
-          </button>
-          <button
-            type="button"
-            className="btn btn-danger-outline"
-            aria-label="Reset simulation"
-            onClick={onReset}
-          >
-            Reset (Tick 0)
-          </button>
-        </div>
-
-        <div className="playback-status" aria-live="polite">
-          <span
-            className={`status-pill ${
-              isDeadlocked
-                ? 'status-deadlocked'
-                : isRunning
-                  ? 'status-running'
-                  : 'status-paused'
-            }`}
-          >
-            {isDeadlocked ? 'Halted (Deadlock)' : isRunning ? 'Running' : 'Paused'}
-          </span>
-          <span className="tick-readout">
-            Tick: <strong>{tick}</strong>
-          </span>
-          <span className="seed-readout">
-            Seed: <strong>{seed}</strong>
-          </span>
-        </div>
-      </div>
-    </section>
+    </aside>
   );
 }

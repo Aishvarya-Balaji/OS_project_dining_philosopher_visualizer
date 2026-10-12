@@ -7,6 +7,7 @@ import {
 
 export interface SimulationTableProps {
   readonly snapshot: SimulationSnapshot;
+  readonly renderMetricsInline?: boolean;
 }
 
 interface Point {
@@ -16,9 +17,9 @@ interface Point {
 
 const CENTER_X = 310;
 const CENTER_Y = 300;
-const TABLE_RADIUS = 135;
-const PHILOSOPHER_RADIUS = 212;
-const FORK_REST_RADIUS = 112;
+const ARENA_RING_RADIUS = 205;
+const CENTER_HUB_RADIUS = 88;
+const FORK_REST_RADIUS = 132;
 const FORK_HELD_RADIUS = 166;
 
 export const STATE_COLORS: Readonly<
@@ -33,28 +34,28 @@ export const STATE_COLORS: Readonly<
   >
 > = {
   Thinking: {
-    fill: '#0f2942',
-    stroke: '#38bdf8',
-    badgeBg: '#0284c7',
-    text: '#e0f2fe',
+    fill: '#0d0d10',
+    stroke: '#71717a',
+    badgeBg: '#27272a',
+    text: '#a1a1aa',
   },
   Hungry: {
-    fill: '#3b2506',
-    stroke: '#fbbf24',
-    badgeBg: '#d97706',
-    text: '#fef3c7',
+    fill: '#0d0d10',
+    stroke: '#d4a24c',
+    badgeBg: '#3f3018',
+    text: '#e7c582',
   },
   Waiting: {
-    fill: '#3f1121',
-    stroke: '#fb7185',
-    badgeBg: '#e11d48',
-    text: '#ffe4e6',
+    fill: '#0d0d10',
+    stroke: '#f87171',
+    badgeBg: '#3f1a1a',
+    text: '#fca5a5',
   },
   Eating: {
-    fill: '#063224',
-    stroke: '#34d399',
-    badgeBg: '#059669',
-    text: '#d1fae5',
+    fill: '#0d0d10',
+    stroke: '#4ade80',
+    badgeBg: '#133823',
+    text: '#86efac',
   },
 };
 
@@ -74,8 +75,7 @@ function getPhilosopherAngle(id: number, count: number): number {
 
 /**
  * Fork i is shared by philosopher i (leftForkId = i) and philosopher (i - 1 + N) % N (rightForkId = i).
- * Placing fork i at angle(P_i) - pi/N puts Fork i halfway between P_{(i-1+N)%N} and P_i,
- * so every philosopher i sits directly between Fork i (counter-clockwise) and Fork (i+1)%N (clockwise).
+ * Placing fork i at angle(P_i) - pi/N puts Fork i halfway between P_{(i-1+N)%N} and P_i.
  */
 function getForkRestAngle(forkId: number, count: number): number {
   return getPhilosopherAngle(forkId, count) - Math.PI / count;
@@ -94,8 +94,7 @@ function getForkPosition(fork: ForkSnapshot, count: number): {
   }
 
   const ownerAngle = getPhilosopherAngle(fork.ownerId, count);
-  // Offset slightly toward the fork's side of the owner so left and right forks sit on either side of the philosopher
-  const angularOffset = fork.id === fork.ownerId ? -0.19 : 0.19;
+  const angularOffset = fork.id === fork.ownerId ? -0.18 : 0.18;
   const targetAngle = ownerAngle + angularOffset;
   const pt = polarToCartesian(CENTER_X, CENTER_Y, FORK_HELD_RADIUS, targetAngle);
   const rotationDeg = Number(((targetAngle * 180) / Math.PI + 90).toFixed(1));
@@ -104,458 +103,536 @@ function getForkPosition(fork: ForkSnapshot, count: number): {
 
 function formatPhilosopherTimer(phil: PhilosopherSnapshot): string {
   if (phil.state === 'Thinking') {
-    return `Think: ${phil.remainingStateTicks}t`;
+    return `Think ${phil.remainingStateTicks}t`;
   }
   if (phil.state === 'Eating') {
-    return `Eat: ${phil.remainingStateTicks}t`;
+    return `Eat ${phil.remainingStateTicks}t`;
   }
-  return `Wait: ${phil.currentWaitTicks}t`;
+  return `Wait ${phil.currentWaitTicks}t`;
 }
 
-export function SimulationTable({ snapshot }: SimulationTableProps) {
+export function SimulationTable({
+  snapshot,
+  renderMetricsInline = true,
+}: SimulationTableProps) {
   const count = snapshot.philosophers.length;
   const starvedSet = new Set(snapshot.detectors.starvedPhilosopherIds);
+  const isDeadlocked = snapshot.detectors.deadlocked;
 
-  return (
-    <div className="simulation-visual-layout">
-      {/* Left column: SVG Circular Dining Table */}
-      <section className="panel svg-table-panel" aria-label="Dining Table Visualization">
-        <div className="panel-header-row">
-          <h2 className="panel-title">Circular Dining Table (N = {count})</h2>
-          <div className="state-legend" aria-label="Philosopher state color legend">
-            {(['Thinking', 'Hungry', 'Waiting', 'Eating'] as const).map((st) => (
-              <span key={st} className="legend-item">
-                <span
-                  className="legend-dot"
-                  style={{
-                    backgroundColor: STATE_COLORS[st].stroke,
-                  }}
-                />
-                {st}
-              </span>
-            ))}
-          </div>
+  const arenaSection = (
+    <section
+      className={`panel svg-table-panel ${isDeadlocked ? 'arena-deadlocked' : ''}`}
+      aria-label="Dining Table Visualization"
+    >
+      <div className="panel-header-row">
+        <div className="arena-header-left">
+          <h2 className="panel-title">Simulation Arena (N = {count})</h2>
+          {isDeadlocked && (
+            <span className="arena-deadlock-badge" role="status">
+              Deadlock detected
+            </span>
+          )}
         </div>
-
-        <div className="svg-container">
-          <svg
-            viewBox="0 0 620 600"
-            className="dining-table-svg"
-            role="img"
-            aria-label={`Dining Philosophers table at tick ${snapshot.tick}`}
-          >
-            <defs>
-              <radialGradient id="tableSurfaceGrad" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="#1e293b" />
-                <stop offset="100%" stopColor="#0f172a" />
-              </radialGradient>
-              <marker
-                id="deadlockArrow"
-                viewBox="0 0 10 10"
-                refX="7"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 1 L 10 5 L 0 9 z" fill="#f43f5e" />
-              </marker>
-            </defs>
-
-            {/* Outer Halo Ring */}
-            <circle
-              cx={CENTER_X}
-              cy={CENTER_Y}
-              r={PHILOSOPHER_RADIUS}
-              fill="none"
-              stroke="#1e293b"
-              strokeWidth="2"
-              strokeDasharray="6 6"
+        <div className="state-legend" aria-label="Philosopher state color legend">
+          {(['Thinking', 'Hungry', 'Waiting', 'Eating'] as const).map((st) => (
+            <span key={st} className="legend-item">
+              <span
+                className="legend-dot"
+                style={{
+                  backgroundColor: STATE_COLORS[st].stroke,
+                }}
+              />
+              {st}
+            </span>
+          ))}
+          <span className="legend-item">
+            <span
+              className="legend-dot"
+              style={{
+                backgroundColor: '#8b5cf6',
+              }}
             />
+            Held Fork
+          </span>
+        </div>
+      </div>
 
-            {/* Central Dining Table */}
-            <circle
-              cx={CENTER_X}
-              cy={CENTER_Y}
-              r={TABLE_RADIUS}
-              fill="url(#tableSurfaceGrad)"
-              stroke={snapshot.detectors.deadlocked ? '#f43f5e' : '#334155'}
-              strokeWidth={snapshot.detectors.deadlocked ? '4' : '3'}
-            />
+      <div className="svg-container">
+        <svg
+          viewBox="0 0 620 600"
+          className="dining-table-svg"
+          role="img"
+          aria-label={`Dining Philosophers table at tick ${snapshot.tick}`}
+        >
+          <defs>
+            <marker
+              id="deadlockArrow"
+              viewBox="0 0 10 10"
+              refX="7"
+              refY="5"
+              markerWidth="5"
+              markerHeight="5"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#ef4444" />
+            </marker>
+          </defs>
 
-            {/* Center Table Status Readout */}
-            <g className="table-center-info" textAnchor="middle">
-              <text x={CENTER_X} y={CENTER_Y - 28} className="svg-center-label">
-                STRATEGY: {snapshot.config.strategy.toUpperCase()}
+          {/* Single Thin Circular Arena Ring */}
+          <circle
+            cx={CENTER_X}
+            cy={CENTER_Y}
+            r={ARENA_RING_RADIUS}
+            fill="#070709"
+            stroke={isDeadlocked ? 'rgba(239, 68, 68, 0.45)' : 'rgba(255, 255, 255, 0.08)'}
+            strokeWidth="1.25"
+          />
+
+          {/* Subtle Inner Hub for Central Readout */}
+          <circle
+            cx={CENTER_X}
+            cy={CENTER_Y}
+            r={CENTER_HUB_RADIUS}
+            fill="#0a0a0d"
+            stroke={isDeadlocked ? '#ef4444' : 'rgba(255, 255, 255, 0.07)'}
+            strokeWidth="1"
+          />
+
+          {/* Small Central Readout: Current Tick and Selected Strategy */}
+          <g className="table-center-info" textAnchor="middle">
+            <text x={CENTER_X} y={CENTER_Y - 18} className="svg-center-label">
+              {snapshot.config.strategy.toUpperCase()}
+            </text>
+            <text x={CENTER_X} y={CENTER_Y + 8} className="svg-center-tick">
+              Tick {snapshot.tick}
+            </text>
+            {isDeadlocked ? (
+              <text x={CENTER_X} y={CENTER_Y + 30} className="svg-center-alert">
+                Deadlock detected
               </text>
-              <text x={CENTER_X} y={CENTER_Y + 4} className="svg-center-tick">
-                Tick {snapshot.tick}
+            ) : snapshot.detectors.livelockDetected ? (
+              <text x={CENTER_X} y={CENTER_Y + 30} className="svg-center-warning">
+                Suspected livelock
               </text>
-              <text x={CENTER_X} y={CENTER_Y + 28} className="svg-center-meals">
-                Meals Completed: {snapshot.totalMealsCompleted}
+            ) : (
+              <text x={CENTER_X} y={CENTER_Y + 30} className="svg-center-meals">
+                {snapshot.totalMealsCompleted} meals
               </text>
-              {snapshot.detectors.deadlocked && (
-                <text x={CENTER_X} y={CENTER_Y + 50} className="svg-center-alert">
-                  DEADLOCKED
-                </text>
-              )}
-              {!snapshot.detectors.deadlocked && snapshot.detectors.livelockDetected && (
-                <text x={CENTER_X} y={CENTER_Y + 50} className="svg-center-warning">
-                  SUSPECTED LIVELOCK
-                </text>
-              )}
-            </g>
+            )}
+          </g>
 
-            {/* Fork Ownership Tether Lines */}
-            {snapshot.forks.map((fork) => {
-              if (fork.ownerId === null) {
-                return null;
-              }
-              const ownerAngle = getPhilosopherAngle(fork.ownerId, count);
-              const ownerPt = polarToCartesian(
-                CENTER_X,
-                CENTER_Y,
-                PHILOSOPHER_RADIUS,
-                ownerAngle
-              );
-              const forkPos = getForkPosition(fork, count);
-              const ownerState = snapshot.philosophers[fork.ownerId]?.state ?? 'Waiting';
-              const strokeColor = STATE_COLORS[ownerState].stroke;
+          {/* Subtle Violet Fork Ownership Tether Lines */}
+          {snapshot.forks.map((fork) => {
+            if (fork.ownerId === null) {
+              return null;
+            }
+            const ownerAngle = getPhilosopherAngle(fork.ownerId, count);
+            const ownerPt = polarToCartesian(
+              CENTER_X,
+              CENTER_Y,
+              ARENA_RING_RADIUS,
+              ownerAngle
+            );
+            const forkPos = getForkPosition(fork, count);
 
+            return (
+              <line
+                key={`tether-${fork.id}`}
+                x1={ownerPt.x}
+                y1={ownerPt.y}
+                x2={forkPos.x}
+                y2={forkPos.y}
+                stroke="#8b5cf6"
+                strokeOpacity="0.55"
+                strokeWidth="1.5"
+                strokeDasharray="3 3"
+                className="fork-tether-line"
+              />
+            );
+          })}
+
+          {/* Restrained Circular Dependency Edges on Deadlock */}
+          {isDeadlocked &&
+            snapshot.philosophers.map((phil) => {
+              const nextId = (phil.id + 1) % count;
+              const a1 = getPhilosopherAngle(phil.id, count) + 0.25;
+              const a2 = getPhilosopherAngle(nextId, count) - 0.25;
+              const p1 = polarToCartesian(CENTER_X, CENTER_Y, ARENA_RING_RADIUS, a1);
+              const p2 = polarToCartesian(CENTER_X, CENTER_Y, ARENA_RING_RADIUS, a2);
               return (
                 <line
-                  key={`tether-${fork.id}`}
-                  x1={ownerPt.x}
-                  y1={ownerPt.y}
-                  x2={forkPos.x}
-                  y2={forkPos.y}
-                  stroke={strokeColor}
-                  strokeWidth="2.5"
-                  strokeDasharray={ownerState === 'Eating' ? undefined : '4 3'}
-                  className="fork-tether-line"
+                  key={`deadlock-edge-${phil.id}`}
+                  x1={p1.x}
+                  y1={p1.y}
+                  x2={p2.x}
+                  y2={p2.y}
+                  stroke="#ef4444"
+                  strokeOpacity="0.65"
+                  strokeWidth="1.5"
+                  markerEnd="url(#deadlockArrow)"
                 />
               );
             })}
 
-            {/* Circular Wait Arrows when Deadlocked */}
-            {snapshot.detectors.deadlocked &&
-              snapshot.philosophers.map((phil) => {
-                const nextId = (phil.id + 1) % count;
-                const a1 = getPhilosopherAngle(phil.id, count) + 0.24;
-                const a2 = getPhilosopherAngle(nextId, count) - 0.24;
-                const p1 = polarToCartesian(CENTER_X, CENTER_Y, PHILOSOPHER_RADIUS - 6, a1);
-                const p2 = polarToCartesian(CENTER_X, CENTER_Y, PHILOSOPHER_RADIUS - 6, a2);
-                return (
-                  <line
-                    key={`deadlock-edge-${phil.id}`}
-                    x1={p1.x}
-                    y1={p1.y}
-                    x2={p2.x}
-                    y2={p2.y}
-                    stroke="#f43f5e"
-                    strokeWidth="2.5"
-                    markerEnd="url(#deadlockArrow)"
-                  />
-                );
-              })}
+          {/* Five Forks (Blade-like Indicators: Neutral when free, Violet #8b5cf6 when held) */}
+          {snapshot.forks.map((fork) => {
+            const pos = getForkPosition(fork, count);
+            const isHeld = fork.ownerId !== null;
+            const strokeColor = isHeld ? '#8b5cf6' : '#52525b';
 
-            {/* Five Forks */}
-            {snapshot.forks.map((fork) => {
-              const pos = getForkPosition(fork, count);
-              const isHeld = fork.ownerId !== null;
-              return (
-                <g
-                  key={fork.id}
-                  className={`svg-fork-group ${isHeld ? 'fork-held' : 'fork-free'}`}
-                  style={{
-                    transform: `translate(${pos.x}px, ${pos.y}px)`,
-                  }}
-                  data-fork-id={fork.id}
-                  data-owner-id={fork.ownerId ?? 'free'}
-                >
-                  <circle
-                    cx={0}
-                    cy={0}
-                    r={18}
-                    fill={isHeld ? '#1e293b' : '#0f172a'}
-                    stroke={isHeld ? '#fbbf24' : '#64748b'}
-                    strokeWidth={isHeld ? '2.5' : '1.75'}
-                  />
-                  {/* Stylized Fork Icon */}
-                  <g transform={`rotate(${pos.rotationDeg})`}>
-                    <line
-                      x1={0}
-                      y1={-2}
-                      x2={0}
-                      y2={9}
-                      stroke={isHeld ? '#fde68a' : '#cbd5e1'}
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                    <line
-                      x1={-4}
-                      y1={-8}
-                      x2={-4}
-                      y2={-2}
-                      stroke={isHeld ? '#fde68a' : '#cbd5e1'}
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                    <line
-                      x1={0}
-                      y1={-9}
-                      x2={0}
-                      y2={-2}
-                      stroke={isHeld ? '#fde68a' : '#cbd5e1'}
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                    <line
-                      x1={4}
-                      y1={-8}
-                      x2={4}
-                      y2={-2}
-                      stroke={isHeld ? '#fde68a' : '#cbd5e1'}
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                    <line
-                      x1={-4}
-                      y1={-2}
-                      x2={4}
-                      y2={-2}
-                      stroke={isHeld ? '#fde68a' : '#cbd5e1'}
-                      strokeWidth="1.5"
-                    />
-                  </g>
-                  <text
-                    x={0}
-                    y={29}
-                    textAnchor="middle"
-                    className="svg-fork-label"
-                    fill={isHeld ? '#fde68a' : '#94a3b8'}
-                  >
-                    F{fork.id} ({isHeld ? `P${fork.ownerId}` : 'free'})
-                  </text>
-                </g>
-              );
-            })}
-
-            {/* Five Philosophers */}
-            {snapshot.philosophers.map((phil) => {
-              const angle = getPhilosopherAngle(phil.id, count);
-              const pt = polarToCartesian(CENTER_X, CENTER_Y, PHILOSOPHER_RADIUS, angle);
-              const palette = STATE_COLORS[phil.state];
-              const isStarved = starvedSet.has(phil.id);
-              const heldLabel =
-                phil.heldForkIds.length > 0
-                  ? phil.heldForkIds.map((id) => `F${id}`).join(', ')
-                  : 'none';
-
-              return (
-                <g
-                  key={phil.id}
-                  className={`svg-philosopher-group state-${phil.state.toLowerCase()}`}
-                  transform={`translate(${pt.x}, ${pt.y})`}
-                  data-philosopher-id={phil.id}
-                  data-state={phil.state}
-                >
-                  {/* Starvation or Eating outer ring */}
-                  {(isStarved || phil.state === 'Eating') && (
-                    <circle
-                      cx={0}
-                      cy={0}
-                      r={54}
-                      fill="none"
-                      stroke={isStarved ? '#f43f5e' : '#34d399'}
-                      strokeWidth="2.5"
-                      strokeDasharray={isStarved ? '5 3' : undefined}
-                    />
-                  )}
-
-                  {/* Main Philosopher Seat Circle */}
-                  <circle
-                    cx={0}
-                    cy={0}
-                    r={46}
-                    fill={palette.fill}
-                    stroke={palette.stroke}
-                    strokeWidth="3"
-                    className="philosopher-circle"
-                  />
-
-                  {/* Philosopher ID & State */}
-                  <text
-                    x={0}
+            return (
+              <g
+                key={fork.id}
+                className={`svg-fork-group ${isHeld ? 'fork-held' : 'fork-free'}`}
+                style={{
+                  transform: `translate(${pos.x}px, ${pos.y}px)`,
+                }}
+                data-fork-id={fork.id}
+                data-owner-id={fork.ownerId ?? 'free'}
+              >
+                <g transform={`rotate(${pos.rotationDeg})`}>
+                  {/* Enlarged Blade / Fork Indicator */}
+                  <rect
+                    x={-8}
                     y={-18}
-                    textAnchor="middle"
-                    className="svg-phil-title"
-                    fill="#f8fafc"
-                  >
-                    P{phil.id}
-                  </text>
-                  <text
-                    x={0}
-                    y={-2}
-                    textAnchor="middle"
-                    className="svg-phil-state"
-                    fill={palette.stroke}
-                  >
-                    {phil.state}
-                  </text>
+                    width={16}
+                    height={36}
+                    rx={8}
+                    fill="#0d0d10"
+                    stroke={strokeColor}
+                    strokeWidth={isHeld ? '2.2' : '1.4'}
+                  />
+                  {/* Fork Handle */}
+                  <line
+                    x1={0}
+                    y1={-3}
+                    x2={0}
+                    y2={12}
+                    stroke={isHeld ? '#c4b5fd' : '#a1a1aa'}
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                  />
+                  {/* Fork Shoulder Bridge */}
+                  <line
+                    x1={-4.2}
+                    y1={-3}
+                    x2={4.2}
+                    y2={-3}
+                    stroke={isHeld ? '#c4b5fd' : '#a1a1aa'}
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                  />
+                  {/* Left, Center, and Right Tines */}
+                  <line
+                    x1={-4.2}
+                    y1={-12}
+                    x2={-4.2}
+                    y2={-3}
+                    stroke={isHeld ? '#c4b5fd' : '#a1a1aa'}
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                  />
+                  <line
+                    x1={0}
+                    y1={-13}
+                    x2={0}
+                    y2={-3}
+                    stroke={isHeld ? '#c4b5fd' : '#a1a1aa'}
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                  />
+                  <line
+                    x1={4.2}
+                    y1={-12}
+                    x2={4.2}
+                    y2={-3}
+                    stroke={isHeld ? '#c4b5fd' : '#a1a1aa'}
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                  />
+                </g>
+                <text
+                  x={0}
+                  y={31}
+                  textAnchor="middle"
+                  className="svg-fork-label"
+                  fill={isHeld ? '#c4b5fd' : '#a1a1aa'}
+                >
+                  F{fork.id} {isHeld ? `· P${fork.ownerId}` : ''}
+                </text>
+              </g>
+            );
+          })}
 
-                  {/* Timer / Wait counter */}
-                  <text
-                    x={0}
-                    y={14}
-                    textAnchor="middle"
-                    className="svg-phil-meta"
-                    fill={palette.text}
-                  >
-                    {formatPhilosopherTimer(phil)}
-                  </text>
+          {/* Five Philosophers */}
+          {snapshot.philosophers.map((phil) => {
+            const angle = getPhilosopherAngle(phil.id, count);
+            const pt = polarToCartesian(CENTER_X, CENTER_Y, ARENA_RING_RADIUS, angle);
+            const palette = STATE_COLORS[phil.state];
+            const isStarved = starvedSet.has(phil.id);
+            const heldLabel =
+              phil.heldForkIds.length > 0
+                ? phil.heldForkIds.map((id) => `F${id}`).join(', ')
+                : '—';
 
-                  {/* Held Forks & Meals */}
-                  <text
-                    x={0}
-                    y={29}
-                    textAnchor="middle"
-                    className="svg-phil-forks"
-                    fill="#cbd5e1"
-                  >
-                    Forks: {heldLabel}
-                  </text>
+            return (
+              <g
+                key={phil.id}
+                className={`svg-philosopher-group state-${phil.state.toLowerCase()}`}
+                transform={`translate(${pt.x}, ${pt.y})`}
+                data-philosopher-id={phil.id}
+                data-state={phil.state}
+              >
+                {/* Subtle Pulse Ring for Eating or Starved Philosopher */}
+                {phil.state === 'Eating' && (
+                  <circle
+                    cx={0}
+                    cy={0}
+                    r={50}
+                    fill="none"
+                    stroke="#4ade80"
+                    strokeWidth="1.5"
+                    className="eating-pulse-ring"
+                  />
+                )}
+                {isStarved && (
+                  <circle
+                    cx={0}
+                    cy={0}
+                    r={51}
+                    fill="none"
+                    stroke="#ef4444"
+                    strokeWidth="1.5"
+                    strokeDasharray="4 3"
+                  />
+                )}
 
-                  {/* Meals Pill below circle */}
-                  <g transform="translate(0, 58)">
+                {/* Philosopher Node Circle */}
+                <circle
+                  cx={0}
+                  cy={0}
+                  r={43}
+                  fill={palette.fill}
+                  stroke={isDeadlocked ? '#ef4444' : palette.stroke}
+                  strokeWidth="2"
+                  className="philosopher-circle"
+                />
+
+                {/* Philosopher ID */}
+                <text
+                  x={0}
+                  y={-15}
+                  textAnchor="middle"
+                  className="svg-phil-title"
+                  fill="#f4f4f5"
+                >
+                  P{phil.id}
+                </text>
+
+                {/* Philosopher Current State */}
+                <text
+                  x={0}
+                  y={1}
+                  textAnchor="middle"
+                  className="svg-phil-state"
+                  fill={palette.stroke}
+                >
+                  {phil.state}
+                </text>
+
+                {/* Timer / Wait Readout */}
+                <text
+                  x={0}
+                  y={15}
+                  textAnchor="middle"
+                  className="svg-phil-meta"
+                  fill="#a1a1aa"
+                >
+                  {formatPhilosopherTimer(phil)}
+                </text>
+
+                {/* Held Forks & Meals */}
+                <text
+                  x={0}
+                  y={28}
+                  textAnchor="middle"
+                  className="svg-phil-forks"
+                  fill={phil.heldForkIds.length > 0 ? '#c4b5fd' : '#71717a'}
+                >
+                  Forks: {heldLabel}
+                </text>
+
+                {/* Meals Completed Tag */}
+                <text
+                  x={0}
+                  y={56}
+                  textAnchor="middle"
+                  className="svg-phil-meals-badge"
+                  fill="#71717a"
+                >
+                  Meals: {phil.mealsCompleted}
+                </text>
+
+                {/* Threshold Starvation Indicator */}
+                {isStarved && (
+                  <g transform="translate(0, -56)">
                     <rect
-                      x={-44}
-                      y={-11}
-                      width={88}
-                      height={20}
-                      rx={10}
-                      fill="#1e293b"
-                      stroke="#475569"
+                      x={-54}
+                      y={-10}
+                      width={108}
+                      height={18}
+                      rx={4}
+                      fill="#180a0d"
+                      stroke="#ef4444"
                       strokeWidth="1"
                     />
                     <text
                       x={0}
-                      y={3}
+                      y={2}
                       textAnchor="middle"
-                      className="svg-phil-meals-badge"
-                      fill="#e2e8f0"
+                      className="svg-starved-badge"
+                      fill="#fca5a5"
                     >
-                      Meals: {phil.mealsCompleted}
+                      STARVED (≥{snapshot.config.starvationThresholdTicks}t)
                     </text>
                   </g>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </section>
+  );
 
-                  {/* Explicit Threshold Starvation Badge */}
-                  {isStarved && (
-                    <g transform="translate(0, -60)">
-                      <rect
-                        x={-62}
-                        y={-11}
-                        width={124}
-                        height={20}
-                        rx={10}
-                        fill="#881337"
-                        stroke="#fb7185"
-                        strokeWidth="1.5"
+  if (!renderMetricsInline) {
+    return arenaSection;
+  }
+
+  return (
+    <div className="simulation-visual-layout">
+      {arenaSection}
+      <PhilosopherMetricsTable snapshot={snapshot} />
+    </div>
+  );
+}
+
+export function PhilosopherMetricsTable({
+  snapshot,
+}: {
+  readonly snapshot: SimulationSnapshot;
+}) {
+  const starvedSet = new Set(snapshot.detectors.starvedPhilosopherIds);
+  const maxLongestWait = Math.max(
+    1,
+    ...snapshot.philosophers.map((p) => p.longestWaitTicks)
+  );
+  const highestWaitValue = Math.max(
+    0,
+    ...snapshot.philosophers.map((p) => p.longestWaitTicks)
+  );
+
+  return (
+    <section
+      className="panel philosopher-table-panel"
+      aria-label="Per-Philosopher Status and Metrics"
+    >
+      <div className="panel-header-row">
+        <h2 className="panel-title">Per-Philosopher Metrics</h2>
+        <span className="mono-meta">
+          Starvation threshold ≥{snapshot.config.starvationThresholdTicks}t
+        </span>
+      </div>
+
+      <div className="table-responsive">
+        <table className="status-table" aria-label="Philosopher status table">
+          <thead>
+            <tr>
+              <th>Phil</th>
+              <th>State</th>
+              <th>L / R Forks</th>
+              <th>Held Forks</th>
+              <th>Curr Wait</th>
+              <th>Max Wait</th>
+              <th>Total Wait</th>
+              <th>Meals</th>
+              <th>Avg Wait</th>
+            </tr>
+          </thead>
+          <tbody>
+            {snapshot.philosophers.map((phil) => {
+              const isStarved = starvedSet.has(phil.id);
+              const isHighestMaxWait =
+                highestWaitValue > 0 && phil.longestWaitTicks === highestWaitValue;
+              const waitRatio = Math.min(
+                100,
+                Math.round((phil.longestWaitTicks / maxLongestWait) * 100)
+              );
+
+              return (
+                <tr
+                  key={phil.id}
+                  className={isStarved ? 'row-starved' : undefined}
+                  data-row-philosopher={phil.id}
+                >
+                  <td className="mono-cell">
+                    <strong>P{phil.id}</strong>
+                  </td>
+                  <td>
+                    <span className="state-plain-cell">
+                      <span
+                        className={`status-dot status-dot-${phil.state.toLowerCase()}`}
                       />
-                      <text
-                        x={0}
-                        y={3}
-                        textAnchor="middle"
-                        className="svg-starved-badge"
-                        fill="#ffe4e6"
+                      <span className="state-plain-text">{phil.state}</span>
+                    </span>
+                    {isStarved && (
+                      <span
+                        className="threshold-flag-pill"
+                        title="starvation detected by threshold"
                       >
-                        STARVED (≥{snapshot.config.starvationThresholdTicks}t)
-                      </text>
-                    </g>
-                  )}
-                </g>
+                        starvation detected by threshold
+                      </span>
+                    )}
+                  </td>
+                  <td className="mono-cell muted-cell">
+                    F{phil.leftForkId} / F{phil.rightForkId}
+                  </td>
+                  <td
+                    className={`mono-cell ${
+                      phil.heldForkIds.length > 0 ? 'violet-cell' : 'muted-cell'
+                    }`}
+                  >
+                    {phil.heldForkIds.length > 0
+                      ? phil.heldForkIds.map((f) => `F${f}`).join(', ')
+                      : '—'}
+                  </td>
+                  <td className="mono-cell">{phil.currentWaitTicks}t</td>
+                  <td className="mono-cell">
+                    <div className="wait-bar-cell">
+                      <span>{phil.longestWaitTicks}t</span>
+                      <div className="wait-bar-track" aria-hidden="true">
+                        <div
+                          className={`wait-bar-fill ${
+                            isHighestMaxWait ? 'wait-bar-max' : ''
+                          }`}
+                          style={{ width: `${waitRatio}%` }}
+                        />
+                      </div>
+                    </div>
+                  </td>
+                  <td className="mono-cell">{phil.totalWaitTicks}t</td>
+                  <td className="mono-cell">
+                    <strong>{phil.mealsCompleted}</strong>
+                  </td>
+                  <td className="mono-cell muted-cell">
+                    {phil.averageWaitPerMeal.toFixed(2)}t
+                  </td>
+                </tr>
               );
             })}
-          </svg>
-        </div>
-      </section>
-
-      {/* Right column: Per-Philosopher Status & Metrics Table */}
-      <section
-        className="panel philosopher-table-panel"
-        aria-label="Per-Philosopher Status and Metrics"
-      >
-        <div className="panel-header-row">
-          <h2 className="panel-title">Per-Philosopher Status &amp; Wait Metrics</h2>
-          <span className="panel-subtitle">
-            Starvation threshold: ≥{snapshot.config.starvationThresholdTicks} wait ticks
-          </span>
-        </div>
-
-        <div className="table-responsive">
-          <table className="status-table" aria-label="Philosopher status table">
-            <thead>
-              <tr>
-                <th>Phil</th>
-                <th>State</th>
-                <th>L / R Forks</th>
-                <th>Held Forks</th>
-                <th>Curr Wait</th>
-                <th>Max Wait</th>
-                <th>Total Wait</th>
-                <th>Meals</th>
-                <th>Avg Wait</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshot.philosophers.map((phil) => {
-                const isStarved = starvedSet.has(phil.id);
-                return (
-                  <tr
-                    key={phil.id}
-                    className={isStarved ? 'row-starved' : undefined}
-                    data-row-philosopher={phil.id}
-                  >
-                    <td>
-                      <strong>P{phil.id}</strong>
-                    </td>
-                    <td>
-                      <span
-                        className={`state-badge state-badge-${phil.state.toLowerCase()}`}
-                      >
-                        {phil.state}
-                      </span>
-                      {isStarved && (
-                        <span
-                          className="threshold-flag-pill"
-                          title="starvation detected by threshold"
-                        >
-                          starvation detected by threshold
-                        </span>
-                      )}
-                    </td>
-                    <td className="mono-cell">
-                      F{phil.leftForkId} / F{phil.rightForkId}
-                    </td>
-                    <td className="mono-cell">
-                      {phil.heldForkIds.length > 0
-                        ? phil.heldForkIds.map((f) => `F${f}`).join(', ')
-                        : '—'}
-                    </td>
-                    <td className="mono-cell">{phil.currentWaitTicks}t</td>
-                    <td className="mono-cell">{phil.longestWaitTicks}t</td>
-                    <td className="mono-cell">{phil.totalWaitTicks}t</td>
-                    <td className="mono-cell">
-                      <strong>{phil.mealsCompleted}</strong>
-                    </td>
-                    <td className="mono-cell">{phil.averageWaitPerMeal.toFixed(2)}t</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

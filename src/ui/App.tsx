@@ -11,7 +11,7 @@ import { getScenarioPreset, NORMAL_PRESET } from '../scenarios/presets';
 import { ComparisonPanel } from './ComparisonPanel';
 import { Controls } from './Controls';
 import { EventLog } from './EventLog';
-import { SimulationTable } from './SimulationTable';
+import { PhilosopherMetricsTable, SimulationTable } from './SimulationTable';
 import { StrategyDetails } from './StrategyDetails';
 
 export function buildSimulationConfig(
@@ -159,79 +159,140 @@ export function App() {
   }, [isRunning, speedMs]);
 
   const activeScenario = getScenarioPreset(scenarioId);
+  const meanWaitTicks =
+    snapshot.philosophers.length > 0
+      ? (
+          snapshot.philosophers.reduce((sum, p) => sum + p.totalWaitTicks, 0) /
+          snapshot.philosophers.length
+        ).toFixed(1)
+      : '0.0';
 
   return (
-    <main className="app-shell">
-      <header className="app-header">
-        <div className="header-title-group">
-          <h1>Dining Philosophers OS Concurrency Simulator</h1>
-          <p>
-            Deterministic tick-based simulation comparing Naive, Counting Semaphore (N−1),
-            Monitor (test(i)), and Lock-free (simulated CAS) synchronization.
-          </p>
-        </div>
-        <div className="header-summary-badges">
-          <span className="summary-badge">
-            Tick: <strong>{snapshot.tick}</strong>
-          </span>
-          <span className="summary-badge">
-            Meals Eaten: <strong>{snapshot.totalMealsEaten}</strong>
-          </span>
-          <span className="summary-badge">
-            Meals Completed: <strong>{snapshot.totalMealsCompleted}</strong>
-          </span>
-        </div>
-      </header>
-
-      {/* Interactive Controls */}
-      <Controls
-        scenarioId={scenarioId}
-        strategy={strategy}
-        casBackoffMode={casBackoffMode}
-        seed={seed}
-        speedMs={speedMs}
-        isRunning={isRunning}
-        isDeadlocked={snapshot.detectors.deadlocked}
-        tick={snapshot.tick}
-        onScenarioChange={handleScenarioChange}
-        onStrategyChange={handleStrategyChange}
-        onCasBackoffModeChange={handleCasBackoffModeChange}
-        onSeedChange={handleSeedChange}
-        onSpeedChange={setSpeedMs}
-        onStart={handleStart}
-        onPause={handlePause}
-        onStep={handleStep}
-        onReset={handleReset}
-      />
-
-      {/* Detector Alert Banners (Deadlock, Threshold Starvation, Suspected Livelock) */}
-      <DetectorBanners snapshot={snapshot} />
-
-      {/* SVG Dining Table + Per-Philosopher Metrics Table */}
-      <SimulationTable snapshot={snapshot} />
-
-      {/* Strategy Internal State + Append-Only Event Log */}
-      <div className="bottom-Split-grid">
-        <StrategyDetails snapshot={snapshot} />
-        <EventLog events={events} />
+    <div className="workspace-root">
+      {/* Subtle Background Diagonal Streaks */}
+      <div className="ambient-streaks" aria-hidden="true">
+        <span className="streak streak-1" />
+        <span className="streak streak-2" />
+        <span className="streak streak-3" />
+        <span className="streak streak-4" />
       </div>
 
-      {/* Headless Cross-Strategy Comparison Table */}
-      <ComparisonPanel scenario={activeScenario} seed={seed} />
-    </main>
+      <main className="app-shell">
+        {/* A. Compact Top Navigation Bar */}
+        <header className="top-nav">
+          <div className="top-nav-brand">
+            <div className="brand-title-row">
+              <h1 className="page-title">
+                Dining Philosophers{' '}
+                <span className="sr-only">OS Concurrency Simulator</span>
+              </h1>
+              <span className="page-subtitle">OS Concurrency Simulator</span>
+            </div>
+            <div className="live-status-indicator" aria-live="polite">
+              <span
+                className={`live-dot ${
+                  snapshot.detectors.deadlocked
+                    ? 'live-dot-deadlock'
+                    : isRunning
+                      ? 'live-dot-running'
+                      : 'live-dot-paused'
+                }`}
+              />
+              <span className="live-status-text">
+                {snapshot.detectors.deadlocked
+                  ? 'Deadlocked'
+                  : isRunning
+                    ? 'Live'
+                    : 'Paused'}
+              </span>
+            </div>
+          </div>
+
+          <div className="top-nav-stats" aria-label="Simulation Statistics">
+            <div className="stat-inline">
+              <span className="stat-number">{snapshot.tick}</span>
+              <span className="stat-label">Ticks</span>
+            </div>
+            <div className="stat-inline">
+              <span className="stat-number">{meanWaitTicks}t</span>
+              <span className="stat-label">Mean Wait ({snapshot.totalMealsEaten} eaten)</span>
+            </div>
+            <div className="stat-inline">
+              <span className="stat-number">{snapshot.totalMealsCompleted}</span>
+              <span className="stat-label">Meals Completed</span>
+            </div>
+          </div>
+        </header>
+
+        {/* Detector Alert Banners (Deadlock, Threshold Starvation, Suspected Livelock) */}
+        <DetectorBanners snapshot={snapshot} />
+
+        {/* B. Main Simulation Workspace: Left/Center Circular Arena (62%) + Right Controls (38%) */}
+        <div className="main-workspace-grid">
+          <SimulationTable snapshot={snapshot} renderMetricsInline={false} />
+          <Controls
+            scenarioId={scenarioId}
+            strategy={strategy}
+            casBackoffMode={casBackoffMode}
+            seed={seed}
+            speedMs={speedMs}
+            isRunning={isRunning}
+            isDeadlocked={snapshot.detectors.deadlocked}
+            tick={snapshot.tick}
+            onScenarioChange={handleScenarioChange}
+            onStrategyChange={handleStrategyChange}
+            onCasBackoffModeChange={handleCasBackoffModeChange}
+            onSeedChange={handleSeedChange}
+            onSpeedChange={setSpeedMs}
+            onStart={handleStart}
+            onPause={handlePause}
+            onStep={handleStep}
+            onReset={handleReset}
+          />
+        </div>
+
+        {/* C. Secondary Information Workspace: Left Metrics Table + Right Event Log */}
+        <div className="secondary-workspace-grid">
+          <PhilosopherMetricsTable snapshot={snapshot} />
+          <EventLog events={events} />
+        </div>
+
+        {/* D. Strategy Internals */}
+        <StrategyDetails snapshot={snapshot} />
+
+        {/* E & F. Cross-Strategy Comparison Table & Strategy Explanation Cards */}
+        <ComparisonPanel
+          scenario={activeScenario}
+          seed={seed}
+          activeStrategy={strategy}
+          activeCasBackoffMode={casBackoffMode}
+          onSelectStrategy={handleStrategyChange}
+        />
+      </main>
+    </div>
   );
 }
 
 export function DetectorBanners({ snapshot }: { readonly snapshot: SimulationSnapshot }) {
-  const { deadlocked, deadlockReason, starvationDetected, starvationReason, livelockDetected, livelockReason } =
-    snapshot.detectors;
+  const {
+    deadlocked,
+    deadlockReason,
+    starvationDetected,
+    starvationReason,
+    livelockDetected,
+    livelockReason,
+  } = snapshot.detectors;
 
   if (!deadlocked && !starvationDetected && !livelockDetected) {
     return null;
   }
 
   return (
-    <section className="detector-banners" aria-label="Concurrency Detector Alerts" role="alert">
+    <section
+      className="detector-banners"
+      aria-label="Concurrency Detector Alerts"
+      role="alert"
+    >
       {deadlocked && (
         <div className="banner banner-deadlock" data-detector="deadlock">
           <div className="banner-title">
@@ -254,8 +315,8 @@ export function DetectorBanners({ snapshot }: { readonly snapshot: SimulationSna
       {livelockDetected && (
         <div className="banner banner-livelock" data-detector="livelock">
           <div className="banner-title">
-            SUSPECTED LIVELOCK — Active CAS Retries &amp; Rollbacks With Zero Meals in Window (
-            {snapshot.config.livelockWindowTicks} ticks)
+            SUSPECTED LIVELOCK — Active CAS Retries &amp; Rollbacks With Zero Meals in
+            Window ({snapshot.config.livelockWindowTicks} ticks)
           </div>
           <p className="banner-body">{livelockReason}</p>
         </div>

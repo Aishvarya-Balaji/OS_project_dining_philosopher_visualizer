@@ -15,6 +15,7 @@ import {
   ComparisonPanel,
   STRATEGY_TRADEOFF_NOTES,
 } from '../src/ui/ComparisonPanel';
+import { nextDeterministicSeed } from '../src/ui/Controls';
 import { EventLog } from '../src/ui/EventLog';
 import { SimulationTable } from '../src/ui/SimulationTable';
 import { StrategyDetails } from '../src/ui/StrategyDetails';
@@ -27,10 +28,12 @@ describe('Step 9 & 10 — UI, SVG Table, Controls, Detectors, Event Log, and Com
       </StrictMode>
     );
 
-    expect(html).toContain('Dining Philosophers OS Concurrency Simulator');
+    expect(html).toContain('Dining Philosophers');
+    expect(html).toContain('OS Concurrency Simulator');
     expect(html).toContain('aria-label="Scenario preset"');
     expect(html).toContain('aria-label="Synchronization strategy"');
     expect(html).toContain('aria-label="Deterministic RNG seed"');
+    expect(html).toContain('aria-label="Reroll seed"');
     expect(html).toContain('aria-label="Simulation speed"');
     expect(html).toContain('aria-label="Start simulation"');
     expect(html).toContain('aria-label="Pause simulation"');
@@ -65,6 +68,10 @@ describe('Step 9 & 10 — UI, SVG Table, Controls, Detectors, Event Log, and Com
         `data-fork-id="${fork.id}" data-owner-id="${expectedOwner}"`
       );
     }
+
+    // Held forks use violet stroke (#8b5cf6) and deadlock displays "Deadlock detected"
+    expect(tableHtml).toContain('#8b5cf6');
+    expect(tableHtml).toContain('Deadlock detected');
 
     expect(bannerHtml).toContain('data-detector="deadlock"');
     expect(bannerHtml).toContain(
@@ -139,11 +146,21 @@ describe('Step 9 & 10 — UI, SVG Table, Controls, Detectors, Event Log, and Com
     expect(snapReset.tick).toBe(0);
     expect(snapReset.config.strategy).toBe('monitor');
     expect(snapReset.config.seed).toBe(42);
+
+    // Reroll seed helper produces a distinct positive integer seed deterministically
+    const rerolled = nextDeterministicSeed(42);
+    expect(rerolled).toBeGreaterThan(0);
+    expect(rerolled).not.toBe(42);
+    expect(nextDeterministicSeed(42)).toBe(rerolled);
   });
 
   it('connects ComparisonPanel to real batchRunner rows, strategy trade-offs, and explicit modeling notes', () => {
     const deadlockHtml = renderToStaticMarkup(
-      <ComparisonPanel scenario={FORCE_DEADLOCK_PRESET} seed={42} />
+      <ComparisonPanel
+        scenario={FORCE_DEADLOCK_PRESET}
+        seed={42}
+        activeStrategy="semaphore"
+      />
     );
     const expectedDeadlockRows = runStrategyBatchComparison({
       scenario: FORCE_DEADLOCK_PRESET,
@@ -154,6 +171,8 @@ describe('Step 9 & 10 — UI, SVG Table, Controls, Detectors, Event Log, and Com
 
     // Verify Naive deadlock (tick 1) and non-deadlocking Semaphore/Monitor/CAS rows are rendered from real data
     expect(deadlockHtml).toContain('Yes (tick 1)');
+    expect(deadlockHtml).toContain('comparison-row-selected');
+    expect(deadlockHtml).toContain('tradeoff-card-selected');
     for (const row of expectedDeadlockRows) {
       expect(deadlockHtml).toContain(row.strategyLabel);
       expect(deadlockHtml).toContain(`${row.totalMealsCompleted}`);
@@ -171,5 +190,17 @@ describe('Step 9 & 10 — UI, SVG Table, Controls, Detectors, Event Log, and Com
     for (const note of STRATEGY_TRADEOFF_NOTES) {
       expect(starvationHtml).toContain(note.title);
     }
+  });
+
+  it('renders all six compact event log filter chips', () => {
+    const engine = new SimulationEngine(NORMAL_PRESET.config);
+    const logHtml = renderToStaticMarkup(<EventLog events={engine.getEventLog()} />);
+
+    expect(logHtml).toContain('All Events');
+    expect(logHtml).toContain('State Changes');
+    expect(logHtml).toContain('Actions');
+    expect(logHtml).toContain('Meals');
+    expect(logHtml).toContain('Locks/Forks');
+    expect(logHtml).toContain('Deadlock');
   });
 });

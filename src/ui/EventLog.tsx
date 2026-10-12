@@ -5,7 +5,13 @@ export interface EventLogProps {
   readonly events: readonly SimulationEvent[];
 }
 
-type EventCategoryFilter = 'all' | 'alerts' | 'meals' | 'synchronization';
+export type EventCategoryFilter =
+  | 'all'
+  | 'state'
+  | 'actions'
+  | 'meals'
+  | 'synchronization'
+  | 'alerts';
 
 function getEventTone(type: SimulationEventType): string {
   switch (type) {
@@ -37,76 +43,88 @@ function getEventTone(type: SimulationEventType): string {
 }
 
 function matchesCategory(evt: SimulationEvent, filter: EventCategoryFilter): boolean {
-  if (filter === 'all') {
-    return true;
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'state':
+      return (
+        evt.type === 'STATE_CHANGE' ||
+        evt.type === 'SIMULATION_INIT' ||
+        evt.type === 'SIMULATION_RESET'
+      );
+    case 'actions':
+      return (
+        evt.type === 'STRATEGY_DECISION' ||
+        evt.type === 'CAS_ATTEMPT' ||
+        evt.type === 'CAS_ROLLBACK' ||
+        evt.type === 'CAS_BACKOFF' ||
+        evt.type === 'MONITOR_TEST'
+      );
+    case 'meals':
+      return evt.type === 'MEAL_STARTED' || evt.type === 'MEAL_COMPLETED';
+    case 'synchronization':
+      return (
+        evt.type === 'FORK_ACQUIRED' ||
+        evt.type === 'FORK_RELEASED' ||
+        evt.type === 'FORK_DENIED' ||
+        evt.type === 'SEMAPHORE_ACQUIRED' ||
+        evt.type === 'SEMAPHORE_RELEASED' ||
+        evt.type === 'SEMAPHORE_QUEUED' ||
+        evt.type === 'MONITOR_TEST' ||
+        evt.type === 'MONITOR_WAIT' ||
+        evt.type === 'MONITOR_SIGNAL' ||
+        evt.type === 'CAS_ATTEMPT' ||
+        evt.type === 'CAS_ROLLBACK' ||
+        evt.type === 'CAS_BACKOFF'
+      );
+    case 'alerts':
+      return (
+        evt.type === 'DEADLOCK_DETECTED' ||
+        evt.type === 'STARVATION_DETECTED' ||
+        evt.type === 'STARVATION_ENDED' ||
+        evt.type === 'LIVELOCK_DETECTED' ||
+        evt.type === 'INVARIANT_VIOLATION'
+      );
+    default:
+      return true;
   }
-  if (filter === 'alerts') {
-    return (
-      evt.type === 'DEADLOCK_DETECTED' ||
-      evt.type === 'STARVATION_DETECTED' ||
-      evt.type === 'STARVATION_ENDED' ||
-      evt.type === 'LIVELOCK_DETECTED' ||
-      evt.type === 'INVARIANT_VIOLATION'
-    );
-  }
-  if (filter === 'meals') {
-    return evt.type === 'MEAL_STARTED' || evt.type === 'MEAL_COMPLETED';
-  }
-  return (
-    evt.type === 'FORK_ACQUIRED' ||
-    evt.type === 'FORK_RELEASED' ||
-    evt.type === 'FORK_DENIED' ||
-    evt.type === 'SEMAPHORE_ACQUIRED' ||
-    evt.type === 'SEMAPHORE_RELEASED' ||
-    evt.type === 'SEMAPHORE_QUEUED' ||
-    evt.type === 'MONITOR_TEST' ||
-    evt.type === 'MONITOR_WAIT' ||
-    evt.type === 'MONITOR_SIGNAL' ||
-    evt.type === 'CAS_ATTEMPT' ||
-    evt.type === 'CAS_ROLLBACK' ||
-    evt.type === 'CAS_BACKOFF'
-  );
 }
 
 export function EventLog({ events }: EventLogProps) {
   const [filter, setFilter] = useState<EventCategoryFilter>('all');
 
   const filteredEvents = events.filter((evt) => matchesCategory(evt, filter));
-  // Display newest events first while keeping deterministic event IDs visible
   const reversedEvents = [...filteredEvents].reverse().slice(0, 120);
 
   return (
     <section className="panel event-log-panel" aria-label="Simulation Event Log">
       <div className="panel-header-row">
-        <div>
-          <h2 className="panel-title">Append-Only Event Log</h2>
-          <span className="panel-subtitle">
-            Showing {reversedEvents.length} of {filteredEvents.length} matching events (total:{' '}
-            {events.length})
-          </span>
-        </div>
+        <h2 className="panel-title">Append-Only Event Log</h2>
+        <span className="mono-meta">
+          {reversedEvents.length} / {events.length} events
+        </span>
+      </div>
 
-        <div className="event-filter-group" role="group" aria-label="Event log category filter">
-          {(
-            [
-              { id: 'all', label: 'All Events' },
-              { id: 'alerts', label: 'Detectors & Alerts' },
-              { id: 'meals', label: 'Meals' },
-              { id: 'synchronization', label: 'Forks / Locks / CAS' },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`btn btn-xs ${
-                filter === tab.id ? 'btn-filter-active' : 'btn-secondary'
-              }`}
-              onClick={() => setFilter(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+      <div className="event-filter-group" role="group" aria-label="Event log category filter">
+        {(
+          [
+            { id: 'all', label: 'All Events' },
+            { id: 'state', label: 'State Changes' },
+            { id: 'actions', label: 'Actions' },
+            { id: 'meals', label: 'Meals' },
+            { id: 'synchronization', label: 'Locks/Forks' },
+            { id: 'alerts', label: 'Deadlock' },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={`filter-chip ${filter === tab.id ? 'filter-chip-active' : ''}`}
+            onClick={() => setFilter(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       <div className="event-log-list" role="log" aria-live="polite">
