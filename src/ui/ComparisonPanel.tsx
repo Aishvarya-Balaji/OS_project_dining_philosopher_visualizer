@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { CasBackoffMode, ScenarioPreset, StrategyName } from '../engine/types';
 import { runStrategyBatchComparison, StrategyRunSpec } from '../runner/batchRunner';
 import { formatComparisonRows } from '../runner/formatResults';
+import { DEFAULT_PHILOSOPHERS, toOrdinal } from '../scenarios/philosopherCount';
 
 export interface ComparisonPanelProps {
   readonly scenario: ScenarioPreset;
@@ -68,6 +69,32 @@ export const STRATEGY_TRADEOFF_NOTES: readonly StrategyTradeoffNote[] = [
       'Avoids passive deadlock because failed second-fork claims release the first fork, but symmetric fixed back-off causes synchronized livelock until seeded randomized back-off breaks symmetry.',
   },
 ];
+
+/**
+ * Returns STRATEGY_TRADEOFF_NOTES worded for the selected philosopher count.
+ * Only the Naive trade-off ("all N philosophers") and the Semaphore mechanism (N−1 permits)
+ * depend on N; at N = 5 the result matches STRATEGY_TRADEOFF_NOTES exactly.
+ */
+export function getStrategyTradeoffNotes(
+  philosopherCount: number
+): readonly StrategyTradeoffNote[] {
+  const permits = Math.max(1, philosopherCount - 1);
+  return STRATEGY_TRADEOFF_NOTES.map((note) => {
+    if (note.strategyKey === 'naive') {
+      return {
+        ...note,
+        tradeoff: `Zero coordination overhead under staggered arrivals, but deadlocks immediately (0 meals) when all ${philosopherCount} philosophers become Hungry symmetrically.`,
+      };
+    }
+    if (note.strategyKey === 'semaphore') {
+      return {
+        ...note,
+        mechanism: `Limits concurrent fork contenders to N−1 = ${permits} room permits and queues the ${toOrdinal(philosopherCount)} philosopher in strict FIFO order.`,
+      };
+    }
+    return note;
+  });
+}
 
 export function ComparisonPanel({
   scenario,
@@ -231,7 +258,9 @@ export function ComparisonPanel({
 
       {/* F. Strategy Explanation Cards */}
       <div className="tradeoffs-grid" aria-label="Strategy Trade-off Summary">
-        {STRATEGY_TRADEOFF_NOTES.map((item) => {
+        {getStrategyTradeoffNotes(
+          scenario.config.philosopherCount ?? DEFAULT_PHILOSOPHERS
+        ).map((item) => {
           const isSelectedCard = item.strategyKey === currentStrategy;
           return (
             <article

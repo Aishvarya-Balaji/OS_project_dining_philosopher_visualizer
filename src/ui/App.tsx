@@ -1,28 +1,96 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createStrategyByName, SimulationEngine } from '../engine/simulation';
 import {
   CasBackoffMode,
+  ScenarioPreset,
   SimulationConfig,
   SimulationEvent,
   SimulationSnapshot,
   StrategyName,
 } from '../engine/types';
 import { getScenarioPreset, NORMAL_PRESET } from '../scenarios/presets';
+import {
+  DEFAULT_PHILOSOPHERS,
+  MAX_PHILOSOPHERS,
+  MIN_PHILOSOPHERS,
+} from '../scenarios/philosopherCount';
 import { ComparisonPanel } from './ComparisonPanel';
 import { Controls } from './Controls';
 import { EventLog } from './EventLog';
 import { PhilosopherMetricsTable, SimulationTable } from './SimulationTable';
 import { StrategyDetails } from './StrategyDetails';
 
+export { DEFAULT_PHILOSOPHERS, MAX_PHILOSOPHERS, MIN_PHILOSOPHERS };
+
+/**
+ * Resizes a per-philosopher preset array to `count` entries by repeating the preset's
+ * pattern cyclically. Returns undefined when the preset does not define the array.
+ */
+function resizeCyclic<T>(source: readonly T[] | undefined, count: number): readonly T[] | undefined {
+  if (!source || source.length === 0 || source.length === count) {
+    return source;
+  }
+  return Array.from({ length: count }, (_, i) => source[i % source.length]!);
+}
+
+/**
+ * Resizes a per-philosopher preset array to `count` entries by truncating, or by giving every
+ * additional seat a copy of the preset's last entry. Returns undefined when not defined.
+ */
+function resizePadLast<T>(source: readonly T[] | undefined, count: number): readonly T[] | undefined {
+  if (!source || source.length === 0 || source.length === count) {
+    return source;
+  }
+  return Array.from({ length: count }, (_, i) => source[Math.min(i, source.length - 1)]!);
+}
+
+/**
+ * Returns the scenario preset's config adapted to the requested philosopher count.
+ * Per-philosopher arrays (initial states, initial think ticks, per-philosopher timing ranges)
+ * are resized so they always match `philosopherCount`, which the engine validates.
+ * When the count equals the preset's own count, the preset config is returned unchanged.
+ *
+ * Resize rule:
+ * - Presets with hand-tuned per-philosopher timing profiles (e.g. Starvation) truncate, or pad
+ *   extra seats with the last philosopher's profile, so the designed neighbourhood around
+ *   P0..P2 is not disturbed by newly introduced fast-cycling neighbours.
+ * - All other presets repeat their pattern cyclically, which keeps uniform presets uniform
+ *   (Force Deadlock / CAS Livelock stay all-Hungry) and keeps Normal's start times staggered.
+ */
+export function adaptConfigToPhilosopherCount(
+  config: SimulationConfig,
+  philosopherCount: number
+): SimulationConfig {
+  if (config.philosopherCount === philosopherCount) {
+    return config;
+  }
+  const hasTunedProfiles =
+    config.perPhilosopherThinkRanges !== undefined || config.perPhilosopherEatRanges !== undefined;
+  const resize = hasTunedProfiles ? resizePadLast : resizeCyclic;
+  return {
+    ...config,
+    philosopherCount,
+    initialStates: resize(config.initialStates, philosopherCount),
+    initialThinkTicks: resize(config.initialThinkTicks, philosopherCount),
+    perPhilosopherThinkRanges: resize(config.perPhilosopherThinkRanges, philosopherCount),
+    perPhilosopherEatRanges: resize(config.perPhilosopherEatRanges, philosopherCount),
+  };
+}
+
 export function buildSimulationConfig(
   scenarioId: string,
   strategy: StrategyName,
   seed: number,
-  casBackoffMode: CasBackoffMode
+  casBackoffMode: CasBackoffMode,
+  philosopherCount?: number
 ): SimulationConfig {
   const preset = getScenarioPreset(scenarioId);
+  const baseConfig =
+    philosopherCount === undefined
+      ? preset.config
+      : adaptConfigToPhilosopherCount(preset.config, philosopherCount);
   return {
-    ...preset.config,
+    ...baseConfig,
     strategy,
     seed,
     casBackoffMode,
@@ -34,6 +102,8 @@ export function App() {
   const initialStrategy: StrategyName = initialScenario.config.strategy ?? 'naive';
   const initialSeed: number = initialScenario.config.seed ?? 42;
   const initialBackoff: CasBackoffMode = initialScenario.config.casBackoffMode ?? 'random';
+  const initialPhilosopherCount: number =
+    initialScenario.config.philosopherCount ?? DEFAULT_PHILOSOPHERS;
 
   const engineRef = useRef<SimulationEngine | null>(null);
   if (engineRef.current === null) {
@@ -41,7 +111,8 @@ export function App() {
       initialScenario.id,
       initialStrategy,
       initialSeed,
-      initialBackoff
+      initialBackoff,
+      initialPhilosopherCount
     );
     engineRef.current = new SimulationEngine(cfg, createStrategyByName(initialStrategy));
   }
@@ -50,6 +121,7 @@ export function App() {
   const [strategy, setStrategy] = useState<StrategyName>(initialStrategy);
   const [casBackoffMode, setCasBackoffMode] = useState<CasBackoffMode>(initialBackoff);
   const [seed, setSeed] = useState<number>(initialSeed);
+  const [philosopherCount, setPhilosopherCount] = useState<number>(initialPhilosopherCount);
   const [speedMs, setSpeedMs] = useState<number>(600);
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
@@ -64,14 +136,16 @@ export function App() {
     nextScenarioId: string,
     nextStrategy: StrategyName,
     nextSeed: number,
-    nextBackoffMode: CasBackoffMode
+    nextBackoffMode: CasBackoffMode,
+    nextPhilosopherCount: number = philosopherCount
   ) => {
     setIsRunning(false);
     const cfg = buildSimulationConfig(
       nextScenarioId,
       nextStrategy,
       nextSeed,
-      nextBackoffMode
+      nextBackoffMode,
+      nextPhilosopherCount
     );
     const engine = engineRef.current!;
     const nextSnapshot = engine.reset(cfg, createStrategyByName(nextStrategy));
@@ -91,6 +165,18 @@ export function App() {
     setSeed(nextSeed);
     setCasBackoffMode(nextBackoff);
     resetEngineWith(nextScenarioId, nextStrategy, nextSeed, nextBackoff);
+  };
+
+  const handlePhilosopherCountChange = (nextCount: number) => {
+    if (
+      !Number.isInteger(nextCount) ||
+      nextCount < MIN_PHILOSOPHERS ||
+      nextCount > MAX_PHILOSOPHERS
+    ) {
+      return;
+    }
+    setPhilosopherCount(nextCount);
+    resetEngineWith(scenarioId, strategy, seed, casBackoffMode, nextCount);
   };
 
   const handleStrategyChange = (nextStrategy: StrategyName) => {
@@ -158,7 +244,15 @@ export function App() {
     };
   }, [isRunning, speedMs]);
 
-  const activeScenario = getScenarioPreset(scenarioId);
+  // Active preset adapted to the selected philosopher count so the cross-strategy comparison
+  // runs against the same table size as the live simulation. Memoized to keep identity stable.
+  const activeScenario: ScenarioPreset = useMemo(() => {
+    const preset = getScenarioPreset(scenarioId);
+    return {
+      ...preset,
+      config: adaptConfigToPhilosopherCount(preset.config, philosopherCount),
+    };
+  }, [scenarioId, philosopherCount]);
   const meanWaitTicks =
     snapshot.philosophers.length > 0
       ? (
@@ -232,6 +326,9 @@ export function App() {
           <SimulationTable snapshot={snapshot} renderMetricsInline={false} />
           <Controls
             scenarioId={scenarioId}
+            philosopherCount={philosopherCount}
+            minPhilosophers={MIN_PHILOSOPHERS}
+            maxPhilosophers={MAX_PHILOSOPHERS}
             strategy={strategy}
             casBackoffMode={casBackoffMode}
             seed={seed}
@@ -240,6 +337,7 @@ export function App() {
             isDeadlocked={snapshot.detectors.deadlocked}
             tick={snapshot.tick}
             onScenarioChange={handleScenarioChange}
+            onPhilosopherCountChange={handlePhilosopherCountChange}
             onStrategyChange={handleStrategyChange}
             onCasBackoffModeChange={handleCasBackoffModeChange}
             onSeedChange={handleSeedChange}

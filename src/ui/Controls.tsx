@@ -1,8 +1,13 @@
+import { useEffect, useState } from 'react';
 import { CasBackoffMode, ScenarioPreset, StrategyName } from '../engine/types';
-import { SCENARIO_PRESETS } from '../scenarios/presets';
+import { getScenarioDescription, SCENARIO_PRESETS } from '../scenarios/presets';
+import { toOrdinal } from '../scenarios/philosopherCount';
 
 export interface ControlsProps {
   readonly scenarioId: string;
+  readonly philosopherCount: number;
+  readonly minPhilosophers: number;
+  readonly maxPhilosophers: number;
   readonly strategy: StrategyName;
   readonly casBackoffMode: CasBackoffMode;
   readonly seed: number;
@@ -11,6 +16,7 @@ export interface ControlsProps {
   readonly isDeadlocked: boolean;
   readonly tick: number;
   readonly onScenarioChange: (scenarioId: string) => void;
+  readonly onPhilosopherCountChange: (count: number) => void;
   readonly onStrategyChange: (strategy: StrategyName) => void;
   readonly onCasBackoffModeChange: (mode: CasBackoffMode) => void;
   readonly onSeedChange: (seed: number) => void;
@@ -67,8 +73,25 @@ export function nextDeterministicSeed(currentSeed: number): number {
   return next === currentSeed ? next + 1 : Math.max(1, next);
 }
 
+/**
+ * Returns the strategy summary worded for the selected philosopher count.
+ * Only the Semaphore summary depends on N (N − 1 room permits); for N = 5 it matches the
+ * static summary in STRATEGY_OPTIONS exactly.
+ */
+export function getStrategySummary(strategy: StrategyName, philosopherCount: number): string {
+  if (strategy === 'semaphore') {
+    const permits = Math.max(1, philosopherCount - 1);
+    return `At most N-1 = ${permits} philosophers may hold room permits at once; ${toOrdinal(philosopherCount)} waits in a strict FIFO queue, preventing circular wait.`;
+  }
+  const option = STRATEGY_OPTIONS.find((opt) => opt.value === strategy) ?? STRATEGY_OPTIONS[0]!;
+  return option.summary;
+}
+
 export function Controls({
   scenarioId,
+  philosopherCount,
+  minPhilosophers,
+  maxPhilosophers,
   strategy,
   casBackoffMode,
   seed,
@@ -77,6 +100,7 @@ export function Controls({
   isDeadlocked,
   tick,
   onScenarioChange,
+  onPhilosopherCountChange,
   onStrategyChange,
   onCasBackoffModeChange,
   onSeedChange,
@@ -90,6 +114,40 @@ export function Controls({
     SCENARIO_PRESETS.find((preset) => preset.id === scenarioId) ?? SCENARIO_PRESETS[0]!;
   const activeStrategyOption =
     STRATEGY_OPTIONS.find((opt) => opt.value === strategy) ?? STRATEGY_OPTIONS[0]!;
+
+  // Local draft so the user can type freely; only valid integers in range are applied.
+  const [philosopherCountDraft, setPhilosopherCountDraft] = useState<string>(
+    String(philosopherCount)
+  );
+  useEffect(() => {
+    setPhilosopherCountDraft(String(philosopherCount));
+  }, [philosopherCount]);
+
+  const parseValidPhilosopherCount = (raw: string): number | null => {
+    if (!/^\d+$/.test(raw.trim())) {
+      return null;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    return parsed >= minPhilosophers && parsed <= maxPhilosophers ? parsed : null;
+  };
+
+  const handlePhilosopherCountInputChange = (raw: string) => {
+    setPhilosopherCountDraft(raw);
+    const parsed = parseValidPhilosopherCount(raw);
+    if (parsed !== null && parsed !== philosopherCount) {
+      onPhilosopherCountChange(parsed);
+    }
+  };
+
+  const handlePhilosopherCountBlur = () => {
+    // Revert any invalid/out-of-range draft to the currently applied count.
+    if (parseValidPhilosopherCount(philosopherCountDraft) === null) {
+      setPhilosopherCountDraft(String(philosopherCount));
+    }
+  };
+
+  const isPhilosopherCountDraftInvalid =
+    parseValidPhilosopherCount(philosopherCountDraft) === null;
 
   const handleSeedInputChange = (raw: string) => {
     const parsed = Number.parseInt(raw, 10);
@@ -148,6 +206,32 @@ export function Controls({
       </div>
 
       <div className="controls-stack">
+        {/* 0. Number of Philosophers */}
+        <div className="control-group">
+          <label htmlFor="philosopher-count-input" className="control-label">
+            Number of Philosophers
+          </label>
+          <input
+            id="philosopher-count-input"
+            type="number"
+            inputMode="numeric"
+            aria-label="Number of philosophers"
+            aria-invalid={isPhilosopherCountDraftInvalid}
+            className="control-input mono-input"
+            min={minPhilosophers}
+            max={maxPhilosophers}
+            step={1}
+            value={philosopherCountDraft}
+            onChange={(e) => handlePhilosopherCountInputChange(e.target.value)}
+            onBlur={handlePhilosopherCountBlur}
+          />
+          <p className="control-hint">
+            {isPhilosopherCountDraftInvalid
+              ? `Enter a whole number from ${minPhilosophers} to ${maxPhilosophers}. Currently using ${philosopherCount}.`
+              : `${philosopherCount} philosophers and ${philosopherCount} forks (${minPhilosophers}–${maxPhilosophers}). Changing this resets the simulation.`}
+          </p>
+        </div>
+
         {/* 1. Scenario Preset Selector */}
         <div className="control-group">
           <label htmlFor="scenario-select" className="control-label">
@@ -166,7 +250,9 @@ export function Controls({
               </option>
             ))}
           </select>
-          <p className="control-hint">{activeScenario.description}</p>
+          <p className="control-hint">
+            {getScenarioDescription(activeScenario, philosopherCount)}
+          </p>
         </div>
 
         {/* 2. Synchronization Strategy Selector */}
@@ -187,7 +273,9 @@ export function Controls({
               </option>
             ))}
           </select>
-          <p className="control-hint">{activeStrategyOption.summary}</p>
+          <p className="control-hint">
+            {getStrategySummary(activeStrategyOption.value, philosopherCount)}
+          </p>
         </div>
 
         {/* Optional CAS Back-off Selector */}

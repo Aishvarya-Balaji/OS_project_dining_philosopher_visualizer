@@ -1,4 +1,5 @@
 import { ScenarioPreset, SimulationConfig } from '../engine/types';
+import { countToWord, DEFAULT_PHILOSOPHERS } from './philosopherCount';
 
 const normalConfig = Object.freeze<SimulationConfig>({
   philosopherCount: 5,
@@ -139,4 +140,26 @@ export function getScenarioPreset(id: string): ScenarioPreset {
     throw new Error(`Unknown scenario preset ID: '${id}'.`);
   }
   return preset;
+}
+
+/**
+ * Returns the preset description worded for the selected philosopher count.
+ * At the preset's own count the original static `description` is returned verbatim.
+ */
+export function getScenarioDescription(preset: ScenarioPreset, philosopherCount: number): string {
+  const presetCount = preset.config.philosopherCount ?? DEFAULT_PHILOSOPHERS;
+  if (philosopherCount === presetCount) {
+    return preset.description;
+  }
+  const word = countToWord(philosopherCount);
+  switch (preset.id) {
+    case FORCE_DEADLOCK_PRESET.id:
+      return `All ${word} philosophers become Hungry simultaneously, reliably triggering circular-wait deadlock under the Naive strategy.`;
+    case CAS_LIVELOCK_PRESET.id:
+      return `Symmetric initial state with fixed CAS back-off where all ${word} philosophers synchronously claim left forks, fail right-fork CAS, roll back, and retry indefinitely.`;
+    case STARVATION_PRESET.id:
+      return `${preset.description} Timings are tuned for ${countToWord(presetCount)} philosophers; with ${word}, starvation is not guaranteed.`;
+    default:
+      return preset.description;
+  }
 }
